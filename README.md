@@ -27,11 +27,11 @@ Backfile has no hidden database. Each article folder gets a `sources.csv`:
 | status | url | anchor_text | archive_is | wayback | local_path | captured_at | found_in | excluded | excluded_reason | notes |
 |---|---|---|---|---|---|---|---|---|---|---|
 
-It opens in Excel, diffs cleanly in git, and remains completely readable if you ever uninstall this app. That is deliberate: an archival tool that holds your evidence hostage in a proprietary store is not an archival tool.
+It opens in Excel, diffs cleanly in git, and remains completely readable if you ever uninstall this app.
 
 ## Design decisions worth knowing
 
-**archive.is captures are human-driven, on purpose.** archive.is answers scripted requests with an immediate HTTP 429 — for reads as well as writes. That is bot protection, not rate limiting, so no amount of backoff will ever automate it. Backfile opens a real browser window, you clear the CAPTCHA, and then it watches the navigation and records the resulting snapshot URL automatically. You never copy or paste a link.
+**archive.is captures are human-driven.** archive.is answers scripted requests with an immediate HTTP 429, for reads as well as writes, and no amount of backoff gets around it. Backfile opens a real browser window, you clear the CAPTCHA, and then it watches the navigation and records the resulting snapshot URL automatically. You never copy or paste a link.
 
 **Local captures use a real browser.** A plain HTTP request gets 403 from the NYT, Reuters and the Telegraph, because it is not a browser. Backfile captures through the Chromium it already ships, saving one self-contained `.mhtml` per source with images and CSS inlined — a single file that still opens years later, even after the folder is moved.
 
@@ -39,7 +39,7 @@ It opens in Excel, diffs cleanly in git, and remains completely readable if you 
 
 **DOI links are excluded automatically.** DOI, Springer, JSTOR, PubMed and arXiv links resolve permanently by design. Chasing snapshots for them is busywork, so they are marked as needing no archive.
 
-**Analysis never destroys work.** A source cut from a later draft keeps its row and its snapshots. An editor's cut is not a reason to throw away evidence.
+**Analysis never destroys work.** A source cut from a later draft keeps its row and its snapshots.
 
 ## Keyboard
 
@@ -58,12 +58,9 @@ Working through a hundred sources shouldn't need a mouse.
 
 ## Working from Google Docs
 
-Backfile does not sign in to your Google account. Reading a doc live would mean
-OAuth, an account, and network calls on your behalf — which would quietly undo
-the promise that this thing is offline and account-free.
+Export the doc into the article's folder: **File → Download → Microsoft Word
+(.docx)**. `.odt` and `.html` exports work too.
 
-Export instead. In Google Docs: **File → Download → Microsoft Word (.docx)**,
-and save it into the article's folder. `.odt` and `.html` exports work too.
 Google's HTML export wraps every link in a `google.com/url?q=…` redirector;
 Backfile unwraps those automatically so your citations point at the real source
 rather than at Google.
@@ -120,8 +117,7 @@ error, which the first two options sometimes cannot clear:
 xattr -dr com.apple.quarantine /Applications/Backfile.app
 ```
 
-Only run that on software you trust. It is the exact reason signing matters:
-without it, every user has to be talked through disabling a safety check.
+Only run that on software you trust.
 
 **On Windows**, SmartScreen will show "Windows protected your PC" — click **More
 info → Run anyway**.
