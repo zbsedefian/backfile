@@ -10,6 +10,7 @@ import { DetailPane } from './components/DetailPane'
 import { BrowserPanel } from './components/BrowserPanel'
 import { PublishPreview } from './components/PublishPreview'
 import { AddSourceDialog } from './components/AddSourceDialog'
+import { CaptureMenu } from './components/CaptureMenu'
 import { ResizeHandle } from './components/ResizeHandle'
 import { tierCounts } from './components/Tier'
 import { clamp, usePersistentState } from './usePersistentState'
@@ -61,6 +62,13 @@ export function App(): JSX.Element {
     url: string
   } | null>(null)
 
+  // Mirrors `batch` in a ref so the workspace watcher can check it without
+  // re-subscribing every time progress ticks.
+  const batchRef = useRef<unknown>(null)
+  useEffect(() => {
+    batchRef.current = batch
+  }, [batch])
+
   const selected = useMemo(
     () => articles.find((a) => a.path === selectedPath) ?? null,
     [articles, selectedPath]
@@ -88,6 +96,26 @@ export function App(): JSX.Element {
     setStatus(`${visibleCount} article folder${visibleCount === 1 ? '' : 's'}`)
   }, [])
 
+  /**
+   * Re-scan without disturbing the current selection, unlike opening a
+   * workspace afresh. Skipped during a capture run: reshuffling the list
+   * mid-batch would move rows under the journalist for no benefit.
+   */
+  const refreshWorkspace = useCallback(async () => {
+    if (!root || batchRef.current) return
+    const found = await window.backfile.scanWorkspace(root)
+    setArticles(found)
+  }, [root])
+
+  // Watch the workspace so a folder made in Finder appears on its own.
+  useEffect(() => {
+    if (!root) return
+    void window.backfile.watchWorkspace(root)
+    return window.backfile.onWorkspaceChanged(() => {
+      void refreshWorkspace()
+    })
+  }, [root, refreshWorkspace])
+
   const updateHidden = useCallback(
     (names: string[]) => {
       setHidden(names)
@@ -103,10 +131,15 @@ export function App(): JSX.Element {
     })()
   }, [loadWorkspace])
 
+  const hadTabs = useRef(false)
   useEffect(() => {
     return window.backfile.onBrowserTabs((next) => {
       setTabs(next)
-      if (next.length > 0) setPaneOpen(true)
+      // Only reveal the pane when a tab first appears. Tab events also fire for
+      // title and loading changes, so reacting to every one of them re-opened
+      // the pane seconds after the journalist deliberately hid it.
+      if (next.length > 0 && !hadTabs.current) setPaneOpen(true)
+      hadTabs.current = next.length > 0
     })
   }, [])
 
@@ -706,57 +739,21 @@ export function App(): JSX.Element {
                     Stop capturing
                   </button>
                 ) : (
-                  <span className="btn-group" role="group">
-                    <span className="btn-group-label">Capture all</span>
-                    <button
-                      className="btn btn-grouped"
-                      onClick={() => captureAll('archiveIs')}
-                      disabled={pendingCounts.archiveIs === 0}
-                      title="Run every remaining source through archive.is in the pane below. Expect at most one CAPTCHA."
-                    >
-                      archive.is
-                      {pendingCounts.archiveIs > 0 && (
-                        <span className="btn-count">{pendingCounts.archiveIs}</span>
-                      )}
-                    </button>
-                    <button
-                      className="btn btn-grouped"
-                      onClick={() => captureAll('wayback')}
-                      disabled={pendingCounts.wayback === 0}
-                      title="Submit every remaining source to the Wayback Machine."
-                    >
-                      Wayback
-                      {pendingCounts.wayback > 0 && (
-                        <span className="btn-count">{pendingCounts.wayback}</span>
-                      )}
-                    </button>
-                    <button
-                      className="btn btn-grouped"
-                      onClick={() => captureAll('local')}
-                      disabled={pendingCounts.local === 0}
-                      title="Download a local copy of every remaining source."
-                    >
-                      Local
-                      {pendingCounts.local > 0 && (
-                        <span className="btn-count">{pendingCounts.local}</span>
-                      )}
-                    </button>
-                    {videoPending > 0 && (
-                      <button
-                        className="btn btn-grouped"
-                        onClick={() => captureAll('video')}
-                        title={
-                          videoAvailable === false
-                            ? 'Requires yt-dlp. Install it with "brew install yt-dlp".'
-                            : 'Download the actual video for every video page. MHTML cannot capture streamed media.'
-                        }
-                      >
-                        Video
-                        <span className="btn-count">{videoPending}</span>
-                      </button>
-                    )}
-                  </span>
+                  <CaptureMenu
+                    pending={{ ...pendingCounts, video: videoPending }}
+                    videoAvailable={videoAvailable}
+                    disabled={analyzing}
+                    onRun={captureAll}
+                  />
                 )}
+
+                <button
+                  className="btn btn-quiet"
+                  onClick={refreshWorkspace}
+                  title="Re-scan the folder for collections added outside Backfile"
+                >
+                  Refresh
+                </button>
 
                 <span className="toolbar-sep" />
 

@@ -1,5 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell } from 'electron'
 import { promises as fs } from 'node:fs'
+import fs_sync from 'node:fs'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { findYtDlp, resetYtDlpCache } from './capture/video'
@@ -112,6 +113,42 @@ function registerIpc(): void {
 
   ipcMain.handle('workspace:scan', async (_e, root: string): Promise<Article[]> => {
     return scanWorkspace(root)
+  })
+
+  /**
+   * Watch the workspace so a folder created in Finder shows up without a
+   * restart. Deliberately does not rescan on its own: it tells the renderer
+   * something changed and lets it decide, so a rescan never lands in the middle
+   * of a capture run and reshuffles the list under the journalist.
+   */
+  let watcher: fs_sync.FSWatcher | null = null
+  let debounce: NodeJS.Timeout | null = null
+
+  ipcMain.handle('workspace:watch', async (event, root: string): Promise<void> => {
+    watcher?.close()
+    watcher = null
+    try {
+      watcher = fs_sync.watch(root, { recursive: true }, (_type, filename) => {
+        const name = filename?.toString() ?? ''
+        // Backfile's own writes must not look like external changes, or every
+        // capture would trigger a rescan of the whole workspace.
+        if (
+          name.includes(`${path.sep}archive${path.sep}`) ||
+          name.startsWith('archive' + path.sep) ||
+          name.endsWith('.tmp') ||
+          name.includes('.DS_Store')
+        ) {
+          return
+        }
+        if (debounce) clearTimeout(debounce)
+        debounce = setTimeout(() => {
+          if (!event.sender.isDestroyed()) event.sender.send('workspace:changed')
+        }, 900)
+      })
+    } catch {
+      // Watching is a convenience; a folder that cannot be watched still works
+      // through the Refresh button.
+    }
   })
 
   ipcMain.handle('workspace:hidden', async (_e, root: string): Promise<string[]> => {

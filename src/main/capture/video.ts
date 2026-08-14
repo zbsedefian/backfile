@@ -31,6 +31,22 @@ const DOWNLOAD_TIMEOUT_MS = 20 * 60_000
 /** Cap the size so one four-hour livestream cannot silently fill a disk. */
 const MAX_FILESIZE = '2G'
 
+/**
+ * Prefer H.264 video with AAC audio.
+ *
+ * Left to itself yt-dlp picks the best available stream, which on YouTube now
+ * means AV1 and Opus. That produces a technically superior file that QuickTime,
+ * Preview and most editing software cannot decode — the video is there, it just
+ * shows nothing. An archive that will not open is not an archive, so
+ * compatibility wins over codec efficiency here, with progressive fallbacks so
+ * an unusual source still downloads something rather than failing.
+ */
+const FORMAT =
+  'bv*[vcodec^=avc1]+ba[acodec^=mp4a]/' +
+  'bv*[ext=mp4]+ba[ext=m4a]/' +
+  'b[ext=mp4]/' +
+  'bv*+ba/b'
+
 export const YTDLP_MISSING =
   'yt-dlp is not installed. Install it with "brew install yt-dlp" (macOS) or ' +
   '"pipx install yt-dlp", then try again.'
@@ -93,6 +109,8 @@ export const videoAdapter: CaptureAdapter = {
           '--no-playlist',
           '--no-progress',
           '--restrict-filenames',
+          '-f',
+          FORMAT,
           '--max-filesize',
           MAX_FILESIZE,
           // Write the metadata alongside: titles and descriptions get edited
@@ -119,8 +137,15 @@ export const videoAdapter: CaptureAdapter = {
     } catch (err) {
       const anyErr = err as { stderr?: string; killed?: boolean; message?: string }
       if (anyErr.killed) return fail('video', url, 'timed out')
-      // yt-dlp's last stderr line is almost always the actionable one.
-      const stderr = (anyErr.stderr ?? '').trim().split('\n').filter(Boolean).pop()
+      // yt-dlp's last stderr line is almost always the actionable one — but it
+      // also prints an update notice on every run, which would otherwise be
+      // reported to the journalist as the reason their download failed.
+      const stderr = (anyErr.stderr ?? '')
+        .trim()
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line && !/^WARNING:|update|pip|wheel|PyPi/i.test(line))
+        .pop()
       return fail('video', url, stderr || anyErr.message || 'yt-dlp failed')
     }
   }

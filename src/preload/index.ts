@@ -29,6 +29,12 @@ const api = {
   lastWorkspace: (): Promise<string | null> => ipcRenderer.invoke('workspace:last'),
   scanWorkspace: (root: string): Promise<Article[]> => ipcRenderer.invoke('workspace:scan', root),
   hiddenArticles: (root: string): Promise<string[]> => ipcRenderer.invoke('workspace:hidden', root),
+  watchWorkspace: (root: string): Promise<void> => ipcRenderer.invoke('workspace:watch', root),
+  onWorkspaceChanged: (handler: () => void): (() => void) => {
+    const listener = (): void => handler()
+    ipcRenderer.on('workspace:changed', listener)
+    return () => ipcRenderer.removeListener('workspace:changed', listener)
+  },
   setHiddenArticles: (root: string, names: string[]): Promise<void> =>
     ipcRenderer.invoke('workspace:setHidden', root, names),
   reloadArticle: (articlePath: string): Promise<Article | null> =>

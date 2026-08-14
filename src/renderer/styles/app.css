@@ -1173,3 +1173,71 @@ tr.is-selected .chip-recapture {
 .change-unarchived {
   padding: 2px 0 2px 14px;
 }
+
+/* ---------- menus ---------- */
+
+.menu-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 40;
+  min-width: 260px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 4px;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  width: 100%;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  padding: 7px 9px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.menu-item:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.menu-item:disabled {
+  color: var(--text-faint);
+  cursor: default;
+}
+
+.menu-item-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.menu-item-count {
+  font-size: 11px;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.menu-item-count.is-done {
+  color: var(--text-faint);
+}
+
+.menu-rule {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 2px;
+}
