@@ -10,6 +10,7 @@ interface Props {
   onSelect: (article: Article) => void
   onChooseWorkspace: () => void
   onSetHidden: (names: string[]) => void
+  onCreateCollection: (name: string) => void
 }
 
 /** Secured means the source has at least the archive.is snapshot that matters. */
@@ -28,10 +29,20 @@ export function Sidebar({
   hidden,
   onSelect,
   onChooseWorkspace,
-  onSetHidden
+  onSetHidden,
+  onCreateCollection
 }: Props): JSX.Element {
   const [showHidden, setShowHidden] = useState(false)
   const [query, setQuery] = useState('')
+  const [creating, setCreating] = useState(false)
+  const [newName, setNewName] = useState('')
+
+  const commitNew = (): void => {
+    const name = newName.trim()
+    if (name) onCreateCollection(name)
+    setNewName('')
+    setCreating(false)
+  }
 
   const hiddenSet = useMemo(() => new Set(hidden), [hidden])
 
@@ -65,11 +76,37 @@ export function Sidebar({
         </div>
       )}
 
+      {root && (
+        <div className="sidebar-search">
+          {creating ? (
+            <input
+              className="input"
+              autoFocus
+              placeholder="Collection name, then Enter"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              onBlur={commitNew}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') commitNew()
+                if (e.key === 'Escape') {
+                  setNewName('')
+                  setCreating(false)
+                }
+              }}
+            />
+          ) : (
+            <button className="btn btn-wide" onClick={() => setCreating(true)}>
+              + New collection
+            </button>
+          )}
+        </div>
+      )}
+
       {articles.length > 0 && (
         <div className="sidebar-search">
           <input
             className="input"
-            placeholder="Filter articles…"
+            placeholder="Filter…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />

@@ -5,6 +5,7 @@ import { Article, CaptureRequest, CaptureResult, ServiceId, SourceLink } from '.
 import { reloadArticle, scanWorkspace } from './project/scan'
 import { analyzeArticle, recordCapture } from './sources/analyze'
 import { readSources, writeSources } from './sources/csv'
+import { addSource, createCollection, NewSource, removeSource, updateSourceUrl } from './sources/manual'
 import { adapterFor } from './capture'
 import { BatchRunner } from './capture/batch'
 import { browserPane, Bounds } from './browser/BrowserPane'
@@ -147,6 +148,31 @@ function registerIpc(): void {
   ipcMain.handle('sources:read', async (_e, articlePath: string): Promise<SourceLink[]> => {
     return readSources(articlePath)
   })
+
+  ipcMain.handle(
+    'workspace:createCollection',
+    async (_e, root: string, name: string): Promise<string> => {
+      return createCollection(root, name)
+    }
+  )
+
+  ipcMain.handle('sources:add', async (_e, articlePath: string, input: NewSource) => {
+    return addSource(articlePath, input)
+  })
+
+  ipcMain.handle(
+    'sources:remove',
+    async (_e, articlePath: string, url: string): Promise<SourceLink[]> => {
+      return removeSource(articlePath, url)
+    }
+  )
+
+  ipcMain.handle(
+    'sources:updateUrl',
+    async (_e, articlePath: string, oldUrl: string, newUrl: string): Promise<SourceLink[]> => {
+      return updateSourceUrl(articlePath, oldUrl, newUrl)
+    }
+  )
 
   ipcMain.handle('capture:run', async (_e, req: CaptureRequest): Promise<CaptureResult> => {
     const adapter = adapterFor(req.service)

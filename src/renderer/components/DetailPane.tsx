@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import type { SourceLink } from '../../shared/types'
 import { TierBadge } from './Tier'
 
@@ -11,6 +12,8 @@ interface Props {
   onOpenExternal: (url: string) => void
   onOpenLocal: (relativePath: string) => void
   onRevealLocal: (relativePath: string) => void
+  onEditUrl: (oldUrl: string, newUrl: string) => void
+  onDelete: (url: string) => void
 }
 
 export function DetailPane({
@@ -20,8 +23,20 @@ export function DetailPane({
   onOpen,
   onOpenExternal,
   onOpenLocal,
-  onRevealLocal
+  onRevealLocal,
+  onEditUrl,
+  onDelete
 }: Props): JSX.Element {
+  const [editing, setEditing] = useState(false)
+  const [draftUrl, setDraftUrl] = useState('')
+
+  // Leave edit mode when the selection changes, so a half-typed URL is never
+  // applied to a different source than the one it was typed for.
+  useEffect(() => {
+    setEditing(false)
+    setDraftUrl(link?.url ?? '')
+  }, [link?.url])
+
   if (!link) {
     return (
       <section className="detail">
@@ -43,14 +58,65 @@ export function DetailPane({
         </button>
       </div>
 
-      <div className="detail-actions">
-        <button className="chip" onClick={() => onOpen(link.url)}>
-          Open in pane
-        </button>
-        <button className="chip" onClick={() => onOpenExternal(link.url)}>
-          Open in browser
-        </button>
-      </div>
+      {editing ? (
+        <div className="field">
+          <input
+            className="input"
+            autoFocus
+            value={draftUrl}
+            onChange={(e) => setDraftUrl(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                onEditUrl(link.url, draftUrl)
+                setEditing(false)
+              }
+              if (e.key === 'Escape') {
+                setDraftUrl(link.url)
+                setEditing(false)
+              }
+            }}
+          />
+          <div className="detail-actions">
+            <button
+              className="chip"
+              onClick={() => {
+                onEditUrl(link.url, draftUrl)
+                setEditing(false)
+              }}
+            >
+              Save
+            </button>
+            <button
+              className="chip"
+              onClick={() => {
+                setDraftUrl(link.url)
+                setEditing(false)
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="detail-actions">
+          <button className="chip" onClick={() => onOpen(link.url)}>
+            Open in pane
+          </button>
+          <button className="chip" onClick={() => onOpenExternal(link.url)}>
+            Open in browser
+          </button>
+          <button className="chip" onClick={() => setEditing(true)} title="Correct this URL">
+            Edit URL
+          </button>
+          <button
+            className="chip chip-danger"
+            title="Remove this source from the collection. Captured files are left on disk."
+            onClick={() => onDelete(link.url)}
+          >
+            Remove
+          </button>
+        </div>
+      )}
 
       {link.anchorText && (
         <div className="detail-block">

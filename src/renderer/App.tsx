@@ -8,6 +8,7 @@ import { SourceTable, busyKey, filterLinks, sortLinks, type Sort } from './compo
 import { DetailPane } from './components/DetailPane'
 import { BrowserPanel } from './components/BrowserPanel'
 import { PublishPreview } from './components/PublishPreview'
+import { AddSourceDialog } from './components/AddSourceDialog'
 import { ResizeHandle } from './components/ResizeHandle'
 import { tierCounts } from './components/Tier'
 import { clamp, usePersistentState } from './usePersistentState'
@@ -31,6 +32,8 @@ export function App(): JSX.Element {
   const [sort, setSort] = useState<Sort>({ key: 'tier', dir: 'asc' })
   const [hidden, setHidden] = useState<string[]>([])
   const [plan, setPlan] = useState<RewritePlan | null>(null)
+  const [addingSource, setAddingSource] = useState(false)
+  const [savingSource, setSavingSource] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
   const [theme, setTheme] = usePersistentState<'system' | 'light' | 'dark'>(
     'layout.theme',
@@ -264,6 +267,63 @@ export function App(): JSX.Element {
       setPublishing(false)
     }
   }, [selected, publishTarget])
+
+  const createCollection = useCallback(
+    async (name: string) => {
+      if (!root) return
+      try {
+        const folder = await window.backfile.createCollection(root, name)
+        const found = await window.backfile.scanWorkspace(root)
+        setArticles(found)
+        // Select it immediately — you made it because you want to put something in it.
+        setSelectedPath(folder)
+        setSelectedUrl(null)
+        setStatus(`Created "${name}". Add links with + Add link.`)
+      } catch (err) {
+        setStatus(`Could not create it: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    },
+    [root]
+  )
+
+  const saveNewSource = useCallback(
+    async (input: { url: string; archiveIs: string; wayback: string; notes: string }) => {
+      if (!selected) return
+      setSavingSource(true)
+      try {
+        const { links, merged } = await window.backfile.addSource(selected.path, input)
+        patchArticle(selected.path, links)
+        setAddingSource(false)
+        setStatus(merged ? 'Already recorded — merged into the existing entry.' : 'Link added.')
+      } catch (err) {
+        setStatus(`Could not add it: ${err instanceof Error ? err.message : String(err)}`)
+      } finally {
+        setSavingSource(false)
+      }
+    },
+    [selected, patchArticle]
+  )
+
+  const deleteSource = useCallback(
+    async (url: string) => {
+      if (!selected) return
+      const links = await window.backfile.removeSource(selected.path, url)
+      patchArticle(selected.path, links)
+      setSelectedUrl(null)
+      setStatus('Removed.')
+    },
+    [selected, patchArticle]
+  )
+
+  const editSourceUrl = useCallback(
+    async (oldUrl: string, newUrl: string) => {
+      if (!selected || !newUrl.trim() || newUrl === oldUrl) return
+      const links = await window.backfile.updateSourceUrl(selected.path, oldUrl, newUrl)
+      patchArticle(selected.path, links)
+      setSelectedUrl(newUrl.trim())
+    },
+    [selected, patchArticle]
+  )
 
   const toggleExcluded = useCallback(
     async (url: string, excluded: boolean) => {
@@ -527,6 +587,7 @@ export function App(): JSX.Element {
             }}
             onChooseWorkspace={chooseWorkspace}
             onSetHidden={updateHidden}
+            onCreateCollection={createCollection}
           />
         ) : (
           <div />
@@ -583,7 +644,23 @@ export function App(): JSX.Element {
               </div>
 
               <div className="toolbar">
-                <button className="btn" onClick={analyze} disabled={analyzing || !!batch}>
+                <button
+                  className="btn btn-primary"
+                  onClick={() => setAddingSource(true)}
+                  title="Save a link to this collection by hand"
+                >
+                  + Add link
+                </button>
+                <button
+                  className="btn"
+                  onClick={analyze}
+                  disabled={analyzing || !!batch || selected.documents.length === 0}
+                  title={
+                    selected.documents.length === 0
+                      ? 'No documents in this folder to read links from'
+                      : 'Read every link out of the documents in this folder'
+                  }
+                >
                   {analyzing ? 'Analyzing…' : 'Analyze links'}
                 </button>
 
@@ -712,6 +789,8 @@ export function App(): JSX.Element {
             onOpenExternal={openExternal}
             onOpenLocal={openLocal}
             onRevealLocal={revealLocal}
+            onEditUrl={editSourceUrl}
+            onDelete={deleteSource}
           />
         ) : (
           <div />
@@ -756,6 +835,15 @@ export function App(): JSX.Element {
             </button>
           </div>
         </div>
+      )}
+
+      {addingSource && selected && (
+        <AddSourceDialog
+          articleName={selected.name}
+          saving={savingSource}
+          onSave={saveNewSource}
+          onCancel={() => setAddingSource(false)}
+        />
       )}
 
       {plan && (

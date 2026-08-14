@@ -22,6 +22,7 @@ import type { RewritePlan, RewriteResult } from '../main/docx/rewriteLinks'
 // already drifted from the real one, silently dropping a field.
 import type { AnalyzeResult } from '../main/sources/analyze'
 import type { MenuAction } from '../main/menu'
+import type { NewSource } from '../main/sources/manual'
 
 const api = {
   chooseWorkspace: (): Promise<string | null> => ipcRenderer.invoke('workspace:choose'),
@@ -38,6 +39,17 @@ const api = {
     ipcRenderer.invoke('sources:read', articlePath),
   saveSources: (articlePath: string, links: SourceLink[]): Promise<void> =>
     ipcRenderer.invoke('sources:save', articlePath, links),
+  createCollection: (root: string, name: string): Promise<string> =>
+    ipcRenderer.invoke('workspace:createCollection', root, name),
+  addSource: (
+    articlePath: string,
+    input: NewSource
+  ): Promise<{ links: SourceLink[]; merged: boolean }> =>
+    ipcRenderer.invoke('sources:add', articlePath, input),
+  removeSource: (articlePath: string, url: string): Promise<SourceLink[]> =>
+    ipcRenderer.invoke('sources:remove', articlePath, url),
+  updateSourceUrl: (articlePath: string, oldUrl: string, newUrl: string): Promise<SourceLink[]> =>
+    ipcRenderer.invoke('sources:updateUrl', articlePath, oldUrl, newUrl),
   capture: (req: CaptureRequest): Promise<CaptureResult> => ipcRenderer.invoke('capture:run', req),
   captureAll: (articlePath: string, service: ServiceId): Promise<void> =>
     ipcRenderer.invoke('capture:batch', articlePath, service),
