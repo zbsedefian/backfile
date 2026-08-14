@@ -245,3 +245,33 @@ test('the plan counts repeated citations of one source', async () => {
   assert.equal(plan.changes.length, 1)
   assert.equal(plan.changes[0].occurrences, 2)
 })
+
+test('captures for one URL land on the same filename, so a retry replaces it', async () => {
+  const { captureFilename } = await import('../src/main/capture/local')
+  const a = captureFilename('https://www.nytimes.com/2026/05/15/world/x.html')
+  const b = captureFilename('https://www.nytimes.com/2026/05/15/world/x.html')
+  assert.equal(a, b)
+  assert.match(a, /\.mhtml$/)
+})
+
+test('different URLs never share a capture filename, even with a long shared prefix', async () => {
+  const { captureFilename } = await import('../src/main/capture/local')
+  const long = 'https://example.com/' + 'a'.repeat(200)
+  assert.notEqual(captureFilename(long + '1'), captureFilename(long + '2'))
+})
+
+test('the plan reports whether it would overwrite an existing output', async () => {
+  const dir = await scratch()
+  await fs.writeFile(
+    path.join(dir, 'draft.docx'),
+    buildDocx([{ id: 'rId1', url: 'https://nyt.com/a', text: 'a' }])
+  )
+  const links = [link('https://nyt.com/a', { archiveIs: 'https://archive.ph/aaaaa' })]
+
+  const first = await planDocxRewrite(dir, 'draft.docx', links)
+  assert.equal(first.overwrites, false)
+
+  await rewriteDocxLinks(dir, 'draft.docx', links)
+  const second = await planDocxRewrite(dir, 'draft.docx', links)
+  assert.equal(second.overwrites, true)
+})

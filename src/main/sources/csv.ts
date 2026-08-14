@@ -159,8 +159,17 @@ export async function readSources(articlePath: string): Promise<SourceLink[]> {
 
 export async function writeSources(articlePath: string, links: SourceLink[]): Promise<void> {
   const file = path.join(articlePath, SOURCES_FILENAME)
-  const tmp = `${file}.tmp`
-  // Write-then-rename so an interrupted save can never truncate existing work.
-  await fs.writeFile(tmp, serializeCsv(links), 'utf8')
-  await fs.rename(tmp, file)
+  // A unique temp name per write. Callers are serialised by a lock, but a
+  // shared "sources.csv.tmp" makes two overlapping writes actively destructive
+  // rather than merely racy: one renames the file away while the other is still
+  // depending on it, and the second write dies with ENOENT.
+  const tmp = `${file}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 8)}.tmp`
+  try {
+    // Write-then-rename so an interrupted save can never truncate existing work.
+    await fs.writeFile(tmp, serializeCsv(links), 'utf8')
+    await fs.rename(tmp, file)
+  } catch (err) {
+    await fs.rm(tmp, { force: true }).catch(() => undefined)
+    throw err
+  }
 }

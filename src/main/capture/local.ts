@@ -13,6 +13,7 @@
 
 import { BrowserWindow } from 'electron'
 import { promises as fs } from 'node:fs'
+import { createHash } from 'node:crypto'
 import path from 'node:path'
 import { CaptureAdapter, CaptureContext, fail, ok } from './types'
 import { CaptureResult } from '../../shared/types'
@@ -28,21 +29,32 @@ const LOAD_TIMEOUT_MS = 45_000
 /** Time after load for lazy images and late scripts to settle before saving. */
 const SETTLE_MS = 2_500
 
-/** A stable, filesystem-safe name derived from the URL itself. */
-export function captureFilename(url: string, at = new Date()): string {
+/**
+ * A stable, filesystem-safe name derived from the URL itself.
+ *
+ * Deliberately deterministic rather than timestamped. Re-capturing a source
+ * then overwrites its own file instead of leaving the superseded one behind
+ * forever, which is what a timestamp would do every single retry — and retries
+ * are common, since a first capture often lands on a cookie wall. The capture
+ * date lives in sources.csv, which is the right place for it anyway.
+ *
+ * The hash disambiguates URLs that share a truncated slug, so two different
+ * pages on one site can never overwrite each other.
+ */
+export function captureFilename(url: string): string {
   let slug: string
   try {
     const u = new URL(url)
-    slug = `${u.hostname}${u.pathname}`.replace(/^www\./, '')
+    slug = `${u.hostname.replace(/^www\./, '')}${u.pathname}`
   } catch {
     slug = url
   }
   slug = slug
     .replace(/[^a-zA-Z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
-    .slice(0, 90)
-  const stamp = at.toISOString().slice(0, 19).replace(/[-:]/g, '').replace('T', '-')
-  return `${stamp}_${slug || 'page'}.mhtml`
+    .slice(0, 80)
+  const hash = createHash('sha1').update(url).digest('hex').slice(0, 8)
+  return `${slug || 'page'}-${hash}.mhtml`
 }
 
 async function captureToFile(url: string, destination: string): Promise<void> {
@@ -98,14 +110,19 @@ export const localAdapter: CaptureAdapter = {
     const dir = path.join(ctx.articlePath, CAPTURE_DIRNAME)
     const filename = captureFilename(url)
     const destination = path.join(dir, filename)
+    // Capture aside, then move into place. Filenames are deterministic, so
+    // writing directly would mean a failed re-capture destroys the perfectly
+    // good snapshot that was already there.
+    const staging = `${destination}.partial`
     try {
       await fs.mkdir(dir, { recursive: true })
-      await captureToFile(url, destination)
+      await captureToFile(url, staging)
+      await fs.rename(staging, destination)
       // The stored path stays relative so the article folder can be moved,
       // renamed, synced or handed to an editor without breaking every row.
       return ok('local', url, path.join(CAPTURE_DIRNAME, filename))
     } catch (err) {
-      await fs.rm(destination, { force: true }).catch(() => undefined)
+      await fs.rm(staging, { force: true }).catch(() => undefined)
       return fail('local', url, err instanceof Error ? err.message : String(err))
     }
   }

@@ -11,6 +11,7 @@
 import { SourceLink, isPermanentCitation } from '../../shared/types'
 import { extractLinksFromDocuments } from '../docx/extractLinks'
 import { readSources, writeSources } from './csv'
+import { withLock } from './lock'
 
 export interface AnalyzeResult {
   links: SourceLink[]
@@ -89,18 +90,27 @@ export async function analyzeArticle(
   return { links, added, updated, orphaned, imported }
 }
 
-/** Record a capture result against a single link and persist it. */
+/**
+ * Record a capture result against a single link and persist it.
+ *
+ * Locked, because local downloads run several at a time and this is a
+ * read-modify-write over the whole file: without serialisation two captures
+ * finishing together would each read the same rows and the later write would
+ * quietly drop the earlier one's snapshot.
+ */
 export async function recordCapture(
   articlePath: string,
   url: string,
   field: 'archiveIs' | 'wayback' | 'localPath',
   value: string
 ): Promise<SourceLink[]> {
-  const links = await readSources(articlePath)
-  const link = links.find((l) => l.url === url)
-  if (!link) return links
-  link[field] = value
-  link.capturedAt = new Date().toISOString().slice(0, 19).replace('T', ' ')
-  await writeSources(articlePath, links)
-  return links
+  return withLock(articlePath, async () => {
+    const links = await readSources(articlePath)
+    const link = links.find((l) => l.url === url)
+    if (!link) return links
+    link[field] = value
+    link.capturedAt = new Date().toISOString().slice(0, 19).replace('T', ' ')
+    await writeSources(articlePath, links)
+    return links
+  })
 }

@@ -384,6 +384,7 @@ export function App(): JSX.Element {
         target instanceof HTMLSelectElement
 
       if (e.key === 'Escape') {
+        if (addingSource) return setAddingSource(false)
         if (plan) return setPlan(null)
         if (typing) return (target as HTMLElement).blur()
         if (query) return setQuery('')
@@ -397,7 +398,7 @@ export function App(): JSX.Element {
         return
       }
 
-      if (typing || plan) return
+      if (typing || plan || addingSource) return
 
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         if (visible.length === 0) return
@@ -588,6 +589,7 @@ export function App(): JSX.Element {
             onChooseWorkspace={chooseWorkspace}
             onSetHidden={updateHidden}
             onCreateCollection={createCollection}
+            onReveal={(p) => window.backfile.revealArticle(p)}
           />
         ) : (
           <div />
@@ -718,12 +720,6 @@ export function App(): JSX.Element {
                   </div>
                 )}
 
-                <button
-                  className="btn btn-quiet"
-                  onClick={() => window.backfile.revealArticle(selected.path)}
-                >
-                  Open in Finder
-                </button>
               </div>
 
               <SourceTable

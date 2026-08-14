@@ -11,6 +11,7 @@ interface Props {
   onChooseWorkspace: () => void
   onSetHidden: (names: string[]) => void
   onCreateCollection: (name: string) => void
+  onReveal: (articlePath: string) => void
 }
 
 /** Secured means the source has at least the archive.is snapshot that matters. */
@@ -30,7 +31,8 @@ export function Sidebar({
   onSelect,
   onChooseWorkspace,
   onSetHidden,
-  onCreateCollection
+  onCreateCollection,
+  onReveal
 }: Props): JSX.Element {
   const [showHidden, setShowHidden] = useState(false)
   const [query, setQuery] = useState('')
@@ -139,16 +141,30 @@ export function Sidebar({
             >
               <div className="article-row-top">
                 <div className="article-name">{article.name}</div>
-                <button
-                  className="article-hide"
-                  title={isHidden ? 'Treat as an article again' : 'Not an article — hide it'}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    toggleHidden(article.name)
-                  }}
-                >
-                  {isHidden ? '+' : '×'}
-                </button>
+                <div className="article-row-actions">
+                  {/* Opening the folder is a property of the collection, so it
+                      belongs on the collection rather than in the toolbar. */}
+                  <button
+                    className="article-hide"
+                    title="Show this folder in Finder"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onReveal(article.path)
+                    }}
+                  >
+                    ↗
+                  </button>
+                  <button
+                    className="article-hide"
+                    title={isHidden ? 'Treat as a collection again' : 'Not a collection — hide it'}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      toggleHidden(article.name)
+                    }}
+                  >
+                    {isHidden ? '+' : '×'}
+                  </button>
+                </div>
               </div>
               <div className="article-meta">
                 {total === 0 ? (

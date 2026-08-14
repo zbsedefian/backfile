@@ -48,6 +48,8 @@ export interface RewritePlan {
   changes: PlannedChange[]
   /** Cited URLs with no snapshot, which will be published as-is. */
   unarchived: string[]
+  /** True when publishing would replace a file already sitting there. */
+  overwrites: boolean
 }
 
 function escapeAttr(value: string): string {
@@ -146,7 +148,14 @@ export async function planDocxRewrite(
 
   changes.sort((a, b) => a.url.localeCompare(b.url))
   unarchived.sort()
-  return { documentName, outputName: outputNameFor(documentName), changes, unarchived }
+
+  const outputName = outputNameFor(documentName)
+  const overwrites = await fs
+    .access(path.join(articlePath, outputName))
+    .then(() => true)
+    .catch(() => false)
+
+  return { documentName, outputName, changes, unarchived, overwrites }
 }
 
 export async function rewriteDocxLinks(

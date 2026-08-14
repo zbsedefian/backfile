@@ -1045,6 +1045,27 @@ body {
   color: var(--danger);
 }
 
+.chip-pair {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.chip-recapture {
+  padding: 3px 6px;
+  opacity: 0;
+}
+
+tr:hover .chip-recapture,
+tr.is-selected .chip-recapture {
+  opacity: 1;
+}
+
+.article-row-actions {
+  display: flex;
+  gap: 2px;
+  flex: none;
+}
+
 .change-row {
   padding: 8px 0;
   border-bottom: 1px solid var(--border);

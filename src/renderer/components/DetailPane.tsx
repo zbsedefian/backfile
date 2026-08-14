@@ -29,11 +29,14 @@ export function DetailPane({
 }: Props): JSX.Element {
   const [editing, setEditing] = useState(false)
   const [draftUrl, setDraftUrl] = useState('')
+  // Removal is one click next to several harmless ones, so it asks first.
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
 
   // Leave edit mode when the selection changes, so a half-typed URL is never
   // applied to a different source than the one it was typed for.
   useEffect(() => {
     setEditing(false)
+    setConfirmingDelete(false)
     setDraftUrl(link?.url ?? '')
   }, [link?.url])
 
@@ -108,13 +111,24 @@ export function DetailPane({
           <button className="chip" onClick={() => setEditing(true)} title="Correct this URL">
             Edit URL
           </button>
-          <button
-            className="chip chip-danger"
-            title="Remove this source from the collection. Captured files are left on disk."
-            onClick={() => onDelete(link.url)}
-          >
-            Remove
-          </button>
+          {confirmingDelete ? (
+            <>
+              <button className="chip chip-danger" onClick={() => onDelete(link.url)}>
+                Really remove
+              </button>
+              <button className="chip" onClick={() => setConfirmingDelete(false)}>
+                Keep
+              </button>
+            </>
+          ) : (
+            <button
+              className="chip chip-danger"
+              title="Remove this source from the collection. Captured files are left on disk."
+              onClick={() => setConfirmingDelete(true)}
+            >
+              Remove
+            </button>
+          )}
         </div>
       )}
 

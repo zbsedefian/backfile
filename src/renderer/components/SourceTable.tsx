@@ -255,20 +255,35 @@ function ServiceCell({
   if (value) {
     return (
       <td className="col-svc">
-        <button
-          className="chip chip-done"
-          title={isFile ? `Open ${value}` : `Open ${value} in your browser`}
-          onClick={(e) => {
-            e.stopPropagation()
-            // A local capture is a file path, so it is opened by the OS. A
-            // finished snapshot opens in the real browser rather than the
-            // embedded pane — it is a result to read, not a page to work in.
-            if (isFile) onOpenLocal?.(value)
-            else onOpenExternal(value)
-          }}
-        >
-          ✓ captured
-        </button>
+        <span className="chip-pair">
+          <button
+            className="chip chip-done"
+            title={isFile ? `Open ${value}` : `Open ${value} in your browser`}
+            onClick={(e) => {
+              e.stopPropagation()
+              // A local capture is a file path, so it is opened by the OS. A
+              // finished snapshot opens in the real browser rather than the
+              // embedded pane — it is a result to read, not a page to work in.
+              if (isFile) onOpenLocal?.(value)
+              else onOpenExternal(value)
+            }}
+          >
+            ✓
+          </button>
+          {/* A capture can be of the wrong page, a paywall, or a cookie wall,
+              and until now there was no way to take another one. */}
+          <button
+            className="chip chip-recapture"
+            disabled={busy}
+            title="Capture this again and replace the recorded one"
+            onClick={(e) => {
+              e.stopPropagation()
+              onCapture(link.url, service)
+            }}
+          >
+            {busy ? '…' : '↻'}
+          </button>
+        </span>
       </td>
     )
   }

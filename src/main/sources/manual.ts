@@ -12,6 +12,7 @@ import path from 'node:path'
 import { SourceLink, isPermanentCitation } from '../../shared/types'
 import { parsePastedLink } from '../../shared/links'
 import { readSources, writeSources, SOURCES_FILENAME } from './csv'
+import { withLock } from './lock'
 
 function sanitizeFolderName(name: string): string {
   const cleaned = name
@@ -52,6 +53,13 @@ export interface NewSource {
  * already recorded. Merging never overwrites a snapshot that is already there.
  */
 export async function addSource(
+  articlePath: string,
+  input: NewSource
+): Promise<{ links: SourceLink[]; merged: boolean }> {
+  return withLock(articlePath, () => addSourceLocked(articlePath, input))
+}
+
+async function addSourceLocked(
   articlePath: string,
   input: NewSource
 ): Promise<{ links: SourceLink[]; merged: boolean }> {
@@ -102,9 +110,11 @@ export async function addSource(
 }
 
 export async function removeSource(articlePath: string, url: string): Promise<SourceLink[]> {
-  const links = (await readSources(articlePath)).filter((l) => l.url !== url)
-  await writeSources(articlePath, links)
-  return links
+  return withLock(articlePath, async () => {
+    const links = (await readSources(articlePath)).filter((l) => l.url !== url)
+    await writeSources(articlePath, links)
+    return links
+  })
 }
 
 /** Update the source URL of a row, e.g. after looking up what a snapshot was of. */
@@ -113,14 +123,16 @@ export async function updateSourceUrl(
   oldUrl: string,
   newUrl: string
 ): Promise<SourceLink[]> {
-  const links = await readSources(articlePath)
-  const link = links.find((l) => l.url === oldUrl)
-  if (!link) return links
-  link.url = newUrl.trim()
-  if (link.notes === 'source URL not yet recorded') link.notes = ''
-  links.sort((a, b) => a.url.localeCompare(b.url))
-  await writeSources(articlePath, links)
-  return links
+  return withLock(articlePath, async () => {
+    const links = await readSources(articlePath)
+    const link = links.find((l) => l.url === oldUrl)
+    if (!link) return links
+    link.url = newUrl.trim()
+    if (link.notes === 'source URL not yet recorded') link.notes = ''
+    links.sort((a, b) => a.url.localeCompare(b.url))
+    await writeSources(articlePath, links)
+    return links
+  })
 }
 
 export { SOURCES_FILENAME }

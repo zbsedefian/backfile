@@ -35,6 +35,12 @@ export function PublishPreview({ plan, writing, onConfirm, onCancel }: Props): J
               visible wording stays exactly as written.
             </span>
           </p>
+          {plan.overwrites && (
+            <p className="field-hint">
+              ⚠ <strong>{plan.outputName}</strong> already exists and will be replaced. If you
+              have edited that copy since it was written, those edits are lost.
+            </p>
+          )}
           <div className="counts">
             <span className="count ok">
               {plan.changes.length} link{plan.changes.length === 1 ? '' : 's'} repointed
@@ -103,7 +109,7 @@ export function PublishPreview({ plan, writing, onConfirm, onCancel }: Props): J
             onClick={onConfirm}
             disabled={writing || plan.changes.length === 0}
           >
-            {writing ? 'Writing…' : `Write ${plan.outputName}`}
+            {writing ? 'Writing…' : plan.overwrites ? 'Replace it' : `Write ${plan.outputName}`}
           </button>
         </footer>
       </div>
