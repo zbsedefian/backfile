@@ -13,10 +13,19 @@ import { Article } from '../../shared/types'
 import { readSources, SOURCES_FILENAME } from '../sources/csv'
 import { isTextSource } from '../docx/extractFromText'
 import { isHtmlSource, isOdtSource } from '../docx/extractFromHtml'
+import { isPublishedCopy } from '../docx/rewriteLinks'
 
 /** Word writes ~$foo.docx lock files while a document is open; they are not drafts. */
 function isRealDocx(name: string): boolean {
-  return name.toLowerCase().endsWith('.docx') && !name.startsWith('~$') && !name.startsWith('.')
+  return (
+    name.toLowerCase().endsWith('.docx') &&
+    !name.startsWith('~$') &&
+    !name.startsWith('.') &&
+    // Backfile's own published copy is not a source document. Reading it back
+    // would re-ingest the archive links this app just wrote into it, filing
+    // every snapshot as a newly discovered source.
+    !isPublishedCopy(name)
+  )
 }
 
 /**

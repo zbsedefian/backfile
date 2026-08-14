@@ -8,7 +8,14 @@ import { Article, CaptureRequest, CaptureResult, ServiceId, SourceLink } from '.
 import { reloadArticle, scanWorkspace } from './project/scan'
 import { analyzeArticle, clearCapture, recordCapture } from './sources/analyze'
 import { readSources, writeSources } from './sources/csv'
-import { addSource, createCollection, NewSource, removeSource, updateSourceUrl } from './sources/manual'
+import {
+  addSource,
+  createCollection,
+  NewSource,
+  removeSource,
+  removeSources,
+  updateSourceUrl
+} from './sources/manual'
 import { adapterFor } from './capture'
 import { BatchRunner } from './capture/batch'
 import { browserPane, Bounds } from './browser/BrowserPane'
@@ -204,6 +211,13 @@ function registerIpc(): void {
     'sources:remove',
     async (_e, articlePath: string, url: string): Promise<SourceLink[]> => {
       return removeSource(articlePath, url)
+    }
+  )
+
+  ipcMain.handle(
+    'sources:removeMany',
+    async (_e, articlePath: string, urls: string[]): Promise<SourceLink[]> => {
+      return removeSources(articlePath, urls)
     }
   )
 

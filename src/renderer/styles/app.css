@@ -1249,3 +1249,8 @@ tr.is-selected .chip-recapture {
   color: var(--text);
   min-width: 66px;
 }
+
+.bulk-confirm {
+  display: inline-flex;
+  gap: 6px;
+}

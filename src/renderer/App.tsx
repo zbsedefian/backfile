@@ -15,7 +15,7 @@ import { ResizeHandle } from './components/ResizeHandle'
 import { tierCounts } from './components/Tier'
 import { clamp, usePersistentState } from './usePersistentState'
 
-type Filter = 'all' | 'unsecured' | 'secured'
+type Filter = 'all' | 'unsecured' | 'secured' | 'orphaned'
 
 const SERVICE_LABEL: Record<ServiceId, string> = {
   archiveIs: 'archive.is',
@@ -403,6 +403,19 @@ export function App(): JSX.Element {
     [selected, patchArticle, capture]
   )
 
+  const [confirmingBulk, setConfirmingBulk] = useState(false)
+
+  /** Remove everything currently listed. Only offered from the orphaned view. */
+  const removeShown = useCallback(async () => {
+    if (!selected) return
+    const urls = visibleRef.current.map((l) => l.url)
+    const links = await window.backfile.removeSources(selected.path, urls)
+    patchArticle(selected.path, links)
+    setSelectedUrl(null)
+    setConfirmingBulk(false)
+    setStatus(`Removed ${urls.length} source${urls.length === 1 ? '' : 's'}.`)
+  }, [selected, patchArticle])
+
   const toggleExcluded = useCallback(
     async (url: string, excluded: boolean) => {
       if (!selected) return
@@ -425,12 +438,23 @@ export function App(): JSX.Element {
     if (!selected) return []
     const byFilter = selected.sources.filter((l) => {
       if (filter === 'all') return true
+      // Orphans are kept on purpose — a cut sentence is not a reason to discard
+      // evidence — but they need to be findable to be cleaned up when they are
+      // genuinely junk.
+      if (filter === 'orphaned') return l.foundIn.length === 0
       const tier = tierOf(l)
       const secured = l.excluded || tier === 'silver' || tier === 'gold'
       return filter === 'secured' ? secured : !secured
     })
     return sortLinks(filterLinks(byFilter, query), sort)
   }, [selected, filter, query, sort])
+
+  // Mirrors the filtered list so the bulk action can read it without being
+  // declared after it.
+  const visibleRef = useRef<SourceLink[]>([])
+  useEffect(() => {
+    visibleRef.current = visible
+  }, [visible])
 
   const counts = useMemo(() => (selected ? tierCounts(selected.sources) : null), [selected])
 
@@ -741,8 +765,28 @@ export function App(): JSX.Element {
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                   />
+                  {filter === 'orphaned' && visible.length > 0 && (
+                    confirmingBulk ? (
+                      <span className="bulk-confirm">
+                        <button className="btn btn-danger" onClick={removeShown}>
+                          Remove {visible.length}
+                        </button>
+                        <button className="btn btn-quiet" onClick={() => setConfirmingBulk(false)}>
+                          Cancel
+                        </button>
+                      </span>
+                    ) : (
+                      <button
+                        className="btn btn-quiet"
+                        title="Remove every source shown here. Captured files stay on disk."
+                        onClick={() => setConfirmingBulk(true)}
+                      >
+                        Remove all {visible.length} shown
+                      </button>
+                    )
+                  )}
                   <div className="filters">
-                    {(['all', 'unsecured', 'secured'] as Filter[]).map((f) => (
+                    {(['all', 'unsecured', 'secured', 'orphaned'] as Filter[]).map((f) => (
                       <button
                         key={f}
                         className={`tab${filter === f ? ' is-active' : ''}`}
@@ -773,7 +817,7 @@ export function App(): JSX.Element {
                       : 'Read every link out of the documents in this folder'
                   }
                 >
-                  {analyzing ? 'Analyzing\u2026' : 'Analyze links'}
+                  {analyzing ? 'Analyzing…' : 'Analyze links'}
                 </button>
 
                 <span className="toolbar-divider" />
@@ -824,7 +868,7 @@ export function App(): JSX.Element {
                       disabled={publishing || !publishTarget}
                       title="Preview a copy of this draft with every cited link repointed at its archive snapshot. The original is not modified."
                     >
-                      Publish archived copy\u2026
+                      Publish archived copy…
                     </button>
                   </div>
                 )}

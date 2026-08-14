@@ -87,8 +87,22 @@ export function preferredSnapshot(link: SourceLink): string | null {
   return link.archiveIs || link.wayback || null
 }
 
+/**
+ * The suffix marking a file Backfile produced.
+ *
+ * Exported because the scanner has to recognise these and leave them alone: a
+ * published copy is full of archive links this app just wrote, so reading it
+ * back in files every snapshot as though it were a freshly discovered source.
+ */
+export const PUBLISHED_SUFFIX = ' (archived links).docx'
+
+/** True for a file Backfile generated, rather than something the journalist wrote. */
+export function isPublishedCopy(name: string): boolean {
+  return name.toLowerCase().endsWith(PUBLISHED_SUFFIX.toLowerCase())
+}
+
 function outputNameFor(documentName: string): string {
-  return `${documentName.replace(/\.docx$/i, '')} (archived links).docx`
+  return `${documentName.replace(/\.docx$/i, '')}${PUBLISHED_SUFFIX}`
 }
 
 /** Every external target in the document, with how often each appears. */

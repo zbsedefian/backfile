@@ -54,6 +54,8 @@ const api = {
     ipcRenderer.invoke('sources:add', articlePath, input),
   removeSource: (articlePath: string, url: string): Promise<SourceLink[]> =>
     ipcRenderer.invoke('sources:remove', articlePath, url),
+  removeSources: (articlePath: string, urls: string[]): Promise<SourceLink[]> =>
+    ipcRenderer.invoke('sources:removeMany', articlePath, urls),
   updateSourceUrl: (articlePath: string, oldUrl: string, newUrl: string): Promise<SourceLink[]> =>
     ipcRenderer.invoke('sources:updateUrl', articlePath, oldUrl, newUrl),
   capture: (req: CaptureRequest): Promise<CaptureResult> => ipcRenderer.invoke('capture:run', req),

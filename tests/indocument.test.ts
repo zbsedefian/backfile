@@ -104,3 +104,11 @@ test('re-analysing does not re-import what is already recorded', async () => {
   assert.equal(again.imported, 0)
   assert.equal(again.added, 0)
 })
+
+test('Backfile’s own published copy is not treated as a source document', async () => {
+  const { isSourceDocument } = await import('../src/main/project/scan')
+  assert.equal(isSourceDocument('CAM_01 draft.docx'), true)
+  // Reading this back would re-ingest the archive links Backfile just wrote.
+  assert.equal(isSourceDocument('CAM_01 draft (archived links).docx'), false)
+  assert.equal(isSourceDocument('CAM_01 draft (Archived Links).docx'), false)
+})

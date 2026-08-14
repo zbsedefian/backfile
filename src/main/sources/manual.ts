@@ -110,6 +110,19 @@ async function addSourceLocked(
   return { links, merged: false }
 }
 
+/** Remove several sources at once, in a single write. */
+export async function removeSources(
+  articlePath: string,
+  urls: string[]
+): Promise<SourceLink[]> {
+  const doomed = new Set(urls)
+  return withLock(articlePath, async () => {
+    const links = (await readSources(articlePath)).filter((l) => !doomed.has(l.url))
+    await writeSources(articlePath, links)
+    return links
+  })
+}
+
 export async function removeSource(articlePath: string, url: string): Promise<SourceLink[]> {
   return withLock(articlePath, async () => {
     const links = (await readSources(articlePath)).filter((l) => l.url !== url)

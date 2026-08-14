@@ -272,7 +272,7 @@ export function DetailPane({
           ) : (
             <span className="muted small">
               This is a video page. A local copy saves the title and description but not the
-              video itself, which is streamed separately \u2014 use Capture all \u203a Video, which
+              video itself, which is streamed separately — use Capture all › Video, which
               needs yt-dlp installed.
             </span>
           )}
