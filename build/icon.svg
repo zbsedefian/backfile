@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!--
+    Backfile.
+
+    A backfile is a newspaper's stack of back issues, so the mark is that stack
+    receding, with a chain link beneath it — because the point of the app is
+    that the links still resolve. Deliberately not a magnifying glass: this
+    preserves sources, it does not search them.
+
+    The link sits on the dark ground rather than across the page. The two rings
+    only read as interlocking if the front one carries a knockout halo, and a
+    halo only disappears cleanly against a single flat colour.
+
+    Everything is solid shapes with heavy strokes so it survives being scaled
+    to 16px in a dock, where finer detail turns to mud.
+  -->
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#252A3D"/>
+      <stop offset="100%" stop-color="#12131A"/>
+    </linearGradient>
+    <linearGradient id="sheet" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#DCE1EC"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="64" y="64" width="896" height="896" rx="200" fill="url(#tile)"/>
+
+  <!-- The stack, receding up and to the left. -->
+  <rect x="290" y="140" width="364" height="420" rx="30" fill="#666F8C"/>
+  <rect x="324" y="168" width="364" height="420" rx="30" fill="#98A0B8"/>
+  <rect x="358" y="196" width="364" height="420" rx="30" fill="url(#sheet)"/>
+
+  <!-- Ruled lines: enough to read as a page, no more. -->
+  <g fill="#8A93AD">
+    <rect x="412" y="272" width="256" height="24" rx="12"/>
+    <rect x="412" y="344" width="256" height="24" rx="12"/>
+    <rect x="412" y="416" width="164" height="24" rx="12"/>
+  </g>
+
+  <!--
+    The link that holds.
+
+    Rotated off the horizontal on purpose: two rings sitting level beside each
+    other read as the letters "CO" rather than as a chain. The diagonal, plus a
+    tight overlap, is what makes it unmistakably a link.
+  -->
+  <g transform="rotate(-30 512 782)">
+    <!-- Back ring. -->
+    <circle cx="452" cy="782" r="82" fill="none" stroke="#E8B93A" stroke-width="44"/>
+
+    <!--
+      Front ring: a wide dark stroke knocks a gap out of the back ring where the
+      two cross, then the gold stroke is laid inside that gap. That two-pass
+      order is what makes them interlock instead of merging into a blob.
+    -->
+    <circle cx="572" cy="782" r="82" fill="none" stroke="#15161F" stroke-width="68"/>
+    <circle cx="572" cy="782" r="82" fill="none" stroke="#E8B93A" stroke-width="44"/>
+  </g>
+</svg>

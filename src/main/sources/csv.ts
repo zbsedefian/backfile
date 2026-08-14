@@ -1,0 +1,166 @@
+/**
+ * Read and write an article's sources.csv.
+ *
+ * This file is the source of truth, not a cache: it lives in the article's own
+ * folder, opens in Excel, diffs cleanly in git, and survives Backfile being
+ * uninstalled. That constraint is why the parser here is a real RFC 4180
+ * implementation rather than a split on commas — URLs carry commas, and
+ * journalists' notes carry quotes and newlines.
+ */
+
+import { promises as fs } from 'node:fs'
+import path from 'node:path'
+import { SourceLink, tierOf } from '../../shared/types'
+
+export const SOURCES_FILENAME = 'sources.csv'
+
+/** Column order is chosen for a human opening this in Excel: status first. */
+const COLUMNS = [
+  'status',
+  'url',
+  'anchor_text',
+  'archive_is',
+  'wayback',
+  'local_path',
+  'captured_at',
+  'found_in',
+  'excluded',
+  'excluded_reason',
+  'notes'
+] as const
+
+const TIER_LABEL: Record<string, string> = {
+  none: '',
+  bronze: 'bronze',
+  silver: 'silver',
+  gold: 'gold'
+}
+
+export function parseCsv(text: string): string[][] {
+  const rows: string[][] = []
+  let row: string[] = []
+  let field = ''
+  let inQuotes = false
+  let i = 0
+
+  // Strip a UTF-8 BOM; Excel writes one and it would poison the first header.
+  if (text.charCodeAt(0) === 0xfeff) i = 1
+
+  for (; i < text.length; i++) {
+    const c = text[i]
+    if (inQuotes) {
+      if (c === '"') {
+        if (text[i + 1] === '"') {
+          field += '"'
+          i++
+        } else {
+          inQuotes = false
+        }
+      } else {
+        field += c
+      }
+      continue
+    }
+    if (c === '"') {
+      inQuotes = true
+    } else if (c === ',') {
+      row.push(field)
+      field = ''
+    } else if (c === '\n' || c === '\r') {
+      // Treat CRLF as one terminator.
+      if (c === '\r' && text[i + 1] === '\n') i++
+      row.push(field)
+      field = ''
+      rows.push(row)
+      row = []
+    } else {
+      field += c
+    }
+  }
+  // A trailing field only counts as a row if the file did not end on a newline.
+  if (field.length > 0 || row.length > 0) {
+    row.push(field)
+    rows.push(row)
+  }
+  return rows
+}
+
+function escapeField(value: string): string {
+  if (/[",\r\n]/.test(value)) return `"${value.replace(/"/g, '""')}"`
+  return value
+}
+
+export function serializeCsv(links: SourceLink[]): string {
+  const lines = [COLUMNS.join(',')]
+  for (const link of links) {
+    const record: Record<(typeof COLUMNS)[number], string> = {
+      status: TIER_LABEL[tierOf(link)] ?? '',
+      url: link.url,
+      anchor_text: link.anchorText,
+      archive_is: link.archiveIs,
+      wayback: link.wayback,
+      local_path: link.localPath,
+      captured_at: link.capturedAt,
+      found_in: link.foundIn.join('; '),
+      excluded: link.excluded ? 'yes' : '',
+      excluded_reason: link.excludedReason,
+      notes: link.notes
+    }
+    lines.push(COLUMNS.map((c) => escapeField(record[c])).join(','))
+  }
+  // Trailing newline keeps the file POSIX-clean and git-diff friendly.
+  return lines.join('\n') + '\n'
+}
+
+export function rowsToLinks(rows: string[][]): SourceLink[] {
+  if (rows.length === 0) return []
+  const header = rows[0].map((h) => h.trim().toLowerCase())
+  const idx = (name: string): number => header.indexOf(name)
+  const at = (row: string[], name: string): string => {
+    const i = idx(name)
+    return i >= 0 && i < row.length ? row[i].trim() : ''
+  }
+
+  const links: SourceLink[] = []
+  for (const row of rows.slice(1)) {
+    // Skip blank lines rather than emitting a phantom source with an empty URL.
+    if (row.every((c) => c.trim() === '')) continue
+    const url = at(row, 'url')
+    if (!url) continue
+    links.push({
+      url,
+      anchorText: at(row, 'anchor_text'),
+      foundIn: at(row, 'found_in')
+        .split(';')
+        .map((s) => s.trim())
+        .filter(Boolean),
+      archiveIs: at(row, 'archive_is'),
+      wayback: at(row, 'wayback'),
+      localPath: at(row, 'local_path'),
+      capturedAt: at(row, 'captured_at'),
+      notes: at(row, 'notes'),
+      excluded: /^(yes|true|1)$/i.test(at(row, 'excluded')),
+      excludedReason: at(row, 'excluded_reason')
+    })
+  }
+  return links
+}
+
+export async function readSources(articlePath: string): Promise<SourceLink[]> {
+  const file = path.join(articlePath, SOURCES_FILENAME)
+  try {
+    const text = await fs.readFile(file, 'utf8')
+    return rowsToLinks(parseCsv(text))
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return []
+    throw err
+  }
+}
+
+export async function writeSources(articlePath: string, links: SourceLink[]): Promise<void> {
+  const file = path.join(articlePath, SOURCES_FILENAME)
+  const tmp = `${file}.tmp`
+  // Write-then-rename so an interrupted save can never truncate existing work.
+  await fs.writeFile(tmp, serializeCsv(links), 'utf8')
+  await fs.rename(tmp, file)
+}
