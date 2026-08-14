@@ -122,6 +122,9 @@ export class ArchiveIsSession {
 
     const tabId = this.prepare()
     this.currentUrl = url
+    // Drive the pane without taking the keyboard; the nudge below hands it back
+    // if a CAPTCHA turns up.
+    browserPane.automated = true
 
     return new Promise<CaptureResult>((resolve) => {
       const done = (result: CaptureResult): void => {
@@ -134,6 +137,9 @@ export class ArchiveIsSession {
       // If it stalls, a CAPTCHA is probably waiting.
       const nudge = setTimeout(() => {
         if (this.pending !== done) return
+        // Hand the keyboard back: from here the page needs to be typed into,
+        // so holding focus in the app would stop the CAPTCHA being answered.
+        browserPane.automated = false
         browserPane.activate(tabId)
         this.onNeedsHuman?.(url)
       }, QUIET_TIMEOUT_MS)
@@ -167,10 +173,12 @@ export class ArchiveIsSession {
 
   cancel(): void {
     this.cancelled = true
+    browserPane.automated = false
     this.settle(fail('archiveIs', this.currentUrl, 'cancelled'))
   }
 
   close(): void {
+    browserPane.automated = false
     this.unlisten?.()
     this.unlisten = null
     const tabId = this.tabId

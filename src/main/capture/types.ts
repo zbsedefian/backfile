@@ -12,6 +12,15 @@ import { CaptureResult, ServiceId } from '../../shared/types'
 export interface CaptureContext {
   /** Absolute path to the article folder, for adapters that write files. */
   articlePath: string
+  /**
+   * Aborted when the journalist presses Stop.
+   *
+   * Every adapter must honour this. Without it, "Stop" only stopped the queue
+   * from advancing while the captures already in flight ran to completion —
+   * which, with a 45-second page load timeout and four running at once, felt
+   * like the button did nothing at all.
+   */
+  signal?: AbortSignal
 }
 
 export interface CaptureAdapter {

@@ -57,7 +57,11 @@ export function captureFilename(url: string): string {
   return `${slug || 'page'}-${hash}.mhtml`
 }
 
-async function captureToFile(url: string, destination: string): Promise<void> {
+async function captureToFile(
+  url: string,
+  destination: string,
+  signal?: AbortSignal
+): Promise<void> {
   const win = new BrowserWindow({
     show: false,
     webPreferences: {
@@ -71,7 +75,15 @@ async function captureToFile(url: string, destination: string): Promise<void> {
     }
   })
 
+  // Destroying the window rejects its in-flight load, which is what makes Stop
+  // immediate rather than "immediate once this page finishes loading".
+  const onAbort = (): void => {
+    if (!win.isDestroyed()) win.destroy()
+  }
+  signal?.addEventListener('abort', onAbort, { once: true })
+
   try {
+    if (signal?.aborted) throw new Error('cancelled')
     win.webContents.setUserAgent(CHROME_UA)
 
     await new Promise<void>((resolve, reject) => {
@@ -96,6 +108,7 @@ async function captureToFile(url: string, destination: string): Promise<void> {
     await new Promise((r) => setTimeout(r, SETTLE_MS))
     await win.webContents.savePage(destination, 'MHTML')
   } finally {
+    signal?.removeEventListener('abort', onAbort)
     // Always tear the window down, or a failed capture leaks a live renderer.
     if (!win.isDestroyed()) win.destroy()
   }
@@ -116,13 +129,14 @@ export const localAdapter: CaptureAdapter = {
     const staging = `${destination}.partial`
     try {
       await fs.mkdir(dir, { recursive: true })
-      await captureToFile(url, staging)
+      await captureToFile(url, staging, ctx.signal)
       await fs.rename(staging, destination)
       // The stored path stays relative so the article folder can be moved,
       // renamed, synced or handed to an editor without breaking every row.
       return ok('local', url, path.join(CAPTURE_DIRNAME, filename))
     } catch (err) {
       await fs.rm(staging, { force: true }).catch(() => undefined)
+      if (ctx.signal?.aborted) return fail('local', url, 'cancelled')
       return fail('local', url, err instanceof Error ? err.message : String(err))
     }
   }

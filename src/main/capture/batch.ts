@@ -18,6 +18,8 @@ import { adapterFor } from './index'
 import { recordCapture } from '../sources/analyze'
 
 export interface BatchProgress {
+  /** Which run this belongs to; several services may run at once. */
+  service: ServiceId
   done: number
   total: number
   url: string
@@ -52,9 +54,18 @@ const LOCAL_CONCURRENCY = 4
 export class BatchRunner {
   private cancelled = false
   private session: ArchiveIsSession | null = null
+  /**
+   * Aborts the captures already in flight, not just the queue.
+   *
+   * Stopping used to only prevent the next source from starting, so with four
+   * local downloads running against a 45-second timeout the button appeared to
+   * do nothing for the better part of a minute.
+   */
+  private readonly aborter = new AbortController()
 
   cancel(): void {
     this.cancelled = true
+    this.aborter.abort()
     this.session?.cancel()
   }
 
@@ -82,6 +93,7 @@ export class BatchRunner {
     if (service === 'archiveIs') {
       this.session = new ArchiveIsSession((url) =>
         onProgress({
+          service,
           done: succeeded + failed,
           total: queue.length,
           url,
@@ -97,6 +109,7 @@ export class BatchRunner {
     /** Run one source and fold its outcome into the counters. */
     const runOne = async (url: string): Promise<'ok' | 'failed' | 'cancelled'> => {
       onProgress({
+        service,
         done: succeeded + failed,
         total: queue.length,
         url,
@@ -106,12 +119,16 @@ export class BatchRunner {
       const result =
         service === 'archiveIs' && this.session
           ? await this.session.capture(url)
-          : await adapterFor(service).capture(url, { articlePath })
+          : await adapterFor(service).capture(url, {
+              articlePath,
+              signal: this.aborter.signal
+            })
 
       if (result.ok && result.value) {
         await recordCapture(articlePath, url, FIELD_FOR[service], result.value)
         succeeded++
         onProgress({
+          service,
           done: succeeded + failed,
           total: queue.length,
           url,
@@ -126,6 +143,7 @@ export class BatchRunner {
 
       failed++
       onProgress({
+        service,
         done: succeeded + failed,
         total: queue.length,
         url,
@@ -167,6 +185,7 @@ export class BatchRunner {
     this.session = null
 
     const final: BatchProgress = {
+      service,
       done: succeeded + failed,
       total: queue.length,
       url: '',

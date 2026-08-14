@@ -223,33 +223,44 @@ function registerIpc(): void {
     return result
   })
 
-  // Only one batch may run at a time; a second would fight the first for the
-  // shared archive.is session and both would lose.
-  let activeBatch: BatchRunner | null = null
+  /*
+   * One run per service, several services at once.
+   *
+   * Two archive.is runs would fight over the single capture tab and the one
+   * CAPTCHA, so that is still forbidden — but blocking every service behind
+   * one global lock meant waiting out a long archive.is run before local
+   * copies could even start, which is exactly the time they should have been
+   * using.
+   */
+  const activeBatches = new Map<ServiceId, BatchRunner>()
 
   ipcMain.handle(
     'capture:batch',
     async (event, articlePath: string, service: ServiceId): Promise<void> => {
-      if (activeBatch) throw new Error('a capture run is already in progress')
+      if (activeBatches.has(service)) {
+        throw new Error(`a ${service} run is already in progress`)
+      }
       const runner = new BatchRunner()
-      activeBatch = runner
+      activeBatches.set(service, runner)
       try {
         const links = await readSources(articlePath)
         await runner.run(articlePath, links, service, (progress) => {
           if (!event.sender.isDestroyed()) event.sender.send('capture:progress', progress)
         })
       } finally {
-        activeBatch = null
+        activeBatches.delete(service)
       }
     }
   )
 
-  ipcMain.handle('capture:cancel', async (): Promise<void> => {
-    activeBatch?.cancel()
+  ipcMain.handle('capture:cancel', async (_e, service?: ServiceId): Promise<void> => {
+    if (service) activeBatches.get(service)?.cancel()
+    else for (const runner of activeBatches.values()) runner.cancel()
   })
 
-  ipcMain.handle('capture:skip', async (): Promise<void> => {
-    activeBatch?.skip()
+  ipcMain.handle('capture:skip', async (_e, service?: ServiceId): Promise<void> => {
+    if (service) activeBatches.get(service)?.skip()
+    else for (const runner of activeBatches.values()) runner.skip()
   })
 
   ipcMain.handle('shell:openExternal', async (_e, url: string): Promise<void> => {

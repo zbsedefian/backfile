@@ -17,9 +17,18 @@ const USER_AGENT =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 ' +
   '(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
 
-async function fetchWithTimeout(url: string, ms: number, init: RequestInit = {}) {
+async function fetchWithTimeout(
+  url: string,
+  ms: number,
+  init: RequestInit = {},
+  external?: AbortSignal
+) {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), ms)
+  // Stop must cut a request that is mid-flight, not merely stop the next one.
+  const relay = (): void => controller.abort()
+  external?.addEventListener('abort', relay, { once: true })
+  if (external?.aborted) controller.abort()
   try {
     return await fetch(url, {
       redirect: 'follow',
@@ -29,6 +38,7 @@ async function fetchWithTimeout(url: string, ms: number, init: RequestInit = {})
     })
   } finally {
     clearTimeout(timer)
+    external?.removeEventListener('abort', relay)
   }
 }
 
@@ -63,7 +73,7 @@ export const waybackAdapter: CaptureAdapter = {
     }
   },
 
-  async capture(url: string): Promise<CaptureResult> {
+  async capture(url: string, ctx?: { signal?: AbortSignal }): Promise<CaptureResult> {
     const existing = await this.lookup!(url)
     if (existing) return ok('wayback', url, existing)
 
@@ -76,11 +86,16 @@ export const waybackAdapter: CaptureAdapter = {
        * tag came back HTTP 500, while the identical URL without a query
        * succeeded. Putting the URL in the body removes the ambiguity entirely.
        */
-      const res = await fetchWithTimeout('https://web.archive.org/save', SAVE_TIMEOUT_MS, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({ url }).toString()
-      })
+      const res = await fetchWithTimeout(
+        'https://web.archive.org/save',
+        SAVE_TIMEOUT_MS,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({ url }).toString()
+        },
+        ctx?.signal
+      )
 
       if (!res.ok) return fail('wayback', url, `HTTP ${res.status}: ${res.statusText}`)
 
@@ -97,6 +112,7 @@ export const waybackAdapter: CaptureAdapter = {
       if (confirmed) return ok('wayback', url, confirmed)
       return fail('wayback', url, 'saved, but no snapshot URL was returned')
     } catch (err) {
+      if (ctx?.signal?.aborted) return fail('wayback', url, 'cancelled')
       const message = err instanceof Error ? err.message : String(err)
       return fail('wayback', url, message.includes('abort') ? 'timed out' : message)
     }

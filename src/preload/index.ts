@@ -59,8 +59,11 @@ const api = {
   capture: (req: CaptureRequest): Promise<CaptureResult> => ipcRenderer.invoke('capture:run', req),
   captureAll: (articlePath: string, service: ServiceId): Promise<void> =>
     ipcRenderer.invoke('capture:batch', articlePath, service),
-  cancelCapture: (): Promise<void> => ipcRenderer.invoke('capture:cancel'),
-  skipCapture: (): Promise<void> => ipcRenderer.invoke('capture:skip'),
+  /** Omit the service to stop everything currently running. */
+  cancelCapture: (service?: ServiceId): Promise<void> =>
+    ipcRenderer.invoke('capture:cancel', service),
+  skipCapture: (service?: ServiceId): Promise<void> =>
+    ipcRenderer.invoke('capture:skip', service),
   /** Subscribe to batch progress. Returns an unsubscribe function. */
   onCaptureProgress: (handler: (p: BatchProgress) => void): (() => void) => {
     const listener = (_e: unknown, p: BatchProgress): void => handler(p)

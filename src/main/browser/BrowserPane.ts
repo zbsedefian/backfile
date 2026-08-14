@@ -53,6 +53,35 @@ export class BrowserPane {
   /** Notified whenever any tab navigates, so captures can be auto-detected. */
   navigationListeners = new Set<(url: string, tabId: string) => void>()
 
+  /**
+   * True while a capture run is driving the pane by itself.
+   *
+   * Loading a page moves OS focus into the native web view — archive.is
+   * autofocuses its input — which during a batch yanked the cursor out of
+   * whatever the journalist was typing in the app. While automated, focus is
+   * put back. It is switched off the moment a CAPTCHA needs answering, because
+   * then the page genuinely should have the keyboard.
+   */
+  automated = false
+
+  /**
+   * Hold focus in the app across an automated page load.
+   *
+   * Pages grab focus at several points during load, so this reasserts a few
+   * times over a short window rather than once.
+   */
+  private preserveFocus(): void {
+    const host = this.host
+    if (!host || host.isDestroyed()) return
+    if (!host.webContents.isFocused()) return
+    for (const delay of [60, 350, 900]) {
+      setTimeout(() => {
+        if (!this.automated || host.isDestroyed()) return
+        host.webContents.focus()
+      }, delay)
+    }
+  }
+
   attach(host: BrowserWindow): void {
     this.host = host
   }
@@ -147,6 +176,7 @@ export class BrowserPane {
 
     this.host.contentView.addChildView(view)
     void wc.loadURL(url)
+    if (this.automated) this.preserveFocus()
 
     if (opts.activate !== false) this.activeId = id
     this.layout()
@@ -159,6 +189,7 @@ export class BrowserPane {
     if (!tab) return
     tab.loading = true
     void tab.view.webContents.loadURL(url)
+    if (this.automated) this.preserveFocus()
     this.emitTabs()
   }
 

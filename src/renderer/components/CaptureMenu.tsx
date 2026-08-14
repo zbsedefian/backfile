@@ -5,6 +5,8 @@ interface Props {
   pending: { archiveIs: number; wayback: number; local: number; video: number }
   videoAvailable: boolean | null
   disabled: boolean
+  /** Services with a run already in flight; a second would collide with it. */
+  running: ServiceId[]
   onRun: (service: ServiceId) => void
 }
 
@@ -20,7 +22,13 @@ interface Props {
  * position. Video is separated below a rule because it is the only action that
  * depends on software Backfile does not ship.
  */
-export function CaptureMenu({ pending, videoAvailable, disabled, onRun }: Props): JSX.Element {
+export function CaptureMenu({
+  pending,
+  videoAvailable,
+  disabled,
+  running,
+  onRun
+}: Props): JSX.Element {
   const [open, setOpen] = useState(false)
   const wrap = useRef<HTMLDivElement>(null)
 
@@ -50,19 +58,22 @@ export function CaptureMenu({ pending, videoAvailable, disabled, onRun }: Props)
     label: string,
     count: number,
     note: string
-  ): JSX.Element => (
-    <button
-      className="menu-item"
-      disabled={count === 0}
-      onClick={() => choose(service)}
-      title={note}
-    >
-      <span className="menu-item-label">{label}</span>
-      <span className={`menu-item-count${count === 0 ? ' is-done' : ''}`}>
-        {count === 0 ? 'all done' : `${count} left`}
-      </span>
-    </button>
-  )
+  ): JSX.Element => {
+    const busy = running.includes(service)
+    return (
+      <button
+        className="menu-item"
+        disabled={count === 0 || busy}
+        onClick={() => choose(service)}
+        title={busy ? 'Already running' : note}
+      >
+        <span className="menu-item-label">{label}</span>
+        <span className={`menu-item-count${count === 0 && !busy ? ' is-done' : ''}`}>
+          {busy ? 'running…' : count === 0 ? 'all done' : `${count} left`}
+        </span>
+      </button>
+    )
+  }
 
   return (
     <div className="menu-wrap" ref={wrap}>
@@ -100,7 +111,7 @@ export function CaptureMenu({ pending, videoAvailable, disabled, onRun }: Props)
 
           <button
             className="menu-item"
-            disabled={pending.video === 0}
+            disabled={pending.video === 0 || running.includes('video')}
             onClick={() => choose('video')}
             title={
               videoAvailable === false
@@ -113,7 +124,11 @@ export function CaptureMenu({ pending, videoAvailable, disabled, onRun }: Props)
               {videoAvailable === false && <span className="pill">needs yt-dlp</span>}
             </span>
             <span className={`menu-item-count${pending.video === 0 ? ' is-done' : ''}`}>
-              {pending.video === 0 ? 'none found' : `${pending.video} left`}
+              {running.includes('video')
+                ? 'running…'
+                : pending.video === 0
+                  ? 'none found'
+                  : `${pending.video} left`}
             </span>
           </button>
         </div>

@@ -124,7 +124,7 @@ export const videoAdapter: CaptureAdapter = {
           '--print',
           'after_move:filepath'
         ],
-        { timeout: DOWNLOAD_TIMEOUT_MS, maxBuffer: 8 * 1024 * 1024 }
+        { timeout: DOWNLOAD_TIMEOUT_MS, maxBuffer: 8 * 1024 * 1024, signal: ctx.signal }
       )
 
       const produced = stdout.trim().split('\n').filter(Boolean).pop()
@@ -136,6 +136,9 @@ export const videoAdapter: CaptureAdapter = {
       return ok('video', url, path.relative(ctx.articlePath, produced))
     } catch (err) {
       const anyErr = err as { stderr?: string; killed?: boolean; message?: string }
+      // An aborted download leaves a .part file behind; yt-dlp cleans it up on
+      // the next attempt, but the failure must not be reported as a timeout.
+      if (ctx.signal?.aborted) return fail('video', url, 'cancelled')
       if (anyErr.killed) return fail('video', url, 'timed out')
       // yt-dlp's last stderr line is almost always the actionable one — but it
       // also prints an update notice on every run, which would otherwise be

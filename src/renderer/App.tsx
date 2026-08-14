@@ -17,6 +17,13 @@ import { clamp, usePersistentState } from './usePersistentState'
 
 type Filter = 'all' | 'unsecured' | 'secured'
 
+const SERVICE_LABEL: Record<ServiceId, string> = {
+  archiveIs: 'archive.is',
+  wayback: 'Wayback',
+  local: 'Local',
+  video: 'Video'
+}
+
 export function App(): JSX.Element {
   const [root, setRoot] = useState<string | null>(null)
   const [articles, setArticles] = useState<Article[]>([])
@@ -55,19 +62,23 @@ export function App(): JSX.Element {
   const [browserHeight, setBrowserHeight] = usePersistentState('layout.browser', 420)
   const [sidebarOpen, setSidebarOpen] = usePersistentState('layout.sidebarOpen', true)
   const [detailOpen, setDetailOpen] = usePersistentState('layout.detailOpen', true)
-  const [batch, setBatch] = useState<{
+  interface RunState {
     done: number
     total: number
     needsHuman: boolean
     url: string
-  } | null>(null)
+  }
+  // Keyed by service: archive.is, Wayback and local copies can run at once, so
+  // one shared progress slot would have them overwriting each other's numbers.
+  const [runs, setRuns] = useState<Partial<Record<ServiceId, RunState>>>({})
+  const anyRunning = Object.keys(runs).length > 0
 
   // Mirrors `batch` in a ref so the workspace watcher can check it without
   // re-subscribing every time progress ticks.
-  const batchRef = useRef<unknown>(null)
+  const batchRef = useRef(false)
   useEffect(() => {
-    batchRef.current = batch
-  }, [batch])
+    batchRef.current = anyRunning
+  }, [anyRunning])
 
   const selected = useMemo(
     () => articles.find((a) => a.path === selectedPath) ?? null,
@@ -217,15 +228,21 @@ export function App(): JSX.Element {
     [selected, patchArticle]
   )
 
-  /** Stream batch progress into the status bar and the inline progress strip. */
+  /** Stream progress into a per-service row. */
   useEffect(() => {
     return window.backfile.onCaptureProgress((p) => {
       if (p.phase === 'finished') {
-        setBatch(null)
+        setRuns((prev) => {
+          const next = { ...prev }
+          delete next[p.service]
+          return next
+        })
         setStatus(
           p.detail === 'Stopped.'
-            ? `Stopped — ${p.succeeded ?? 0} captured.`
-            : `Done. ${p.succeeded ?? 0} captured${p.failed ? `, ${p.failed} failed` : ''}.`
+            ? `${p.service}: stopped — ${p.succeeded ?? 0} captured.`
+            : `${p.service}: done. ${p.succeeded ?? 0} captured${
+                p.failed ? `, ${p.failed} failed` : ''
+              }.`
         )
         if (selectedPath) {
           void window.backfile
@@ -234,35 +251,44 @@ export function App(): JSX.Element {
         }
         return
       }
-      setBatch({
-        done: p.done,
-        total: p.total,
-        needsHuman: p.phase === 'needs-human',
-        url: p.url
-      })
+
+      setRuns((prev) => ({
+        ...prev,
+        [p.service]: {
+          done: p.done,
+          total: p.total,
+          needsHuman: p.phase === 'needs-human',
+          url: p.url
+        }
+      }))
+
       if (p.phase === 'needs-human') {
-        // The message says "solve it in the pane below", so the pane had better
-        // be below. It may have been hidden, or collapsed by an earlier run.
+        // The message points at the pane, so the pane had better be visible.
         setPaneOpen(true)
         setStatus(p.detail ?? 'Waiting for you…')
-      }
-      else if (p.phase === 'saved') setStatus(`${p.done}/${p.total} · saved ${p.detail}`)
+      } else if (p.phase === 'saved') setStatus(`${p.done}/${p.total} · saved ${p.detail}`)
       else if (p.phase === 'failed') setStatus(`${p.done}/${p.total} · failed: ${p.detail}`)
-      else setStatus(`${p.done}/${p.total} · capturing ${p.url}`)
     })
   }, [selectedPath, patchArticle])
 
   const captureAll = useCallback(
     async (service: ServiceId) => {
       if (!selected) return
-      setBatch({ done: 0, total: 0, needsHuman: false, url: '' })
+      setRuns((prev) => ({
+        ...prev,
+        [service]: { done: 0, total: 0, needsHuman: false, url: '' }
+      }))
       // archive.is runs in the pane, so make sure the journalist can see it.
       if (service === 'archiveIs') setPaneOpen(true)
       try {
         await window.backfile.captureAll(selected.path, service)
       } catch (err) {
-        setStatus(`Batch failed: ${err instanceof Error ? err.message : String(err)}`)
-        setBatch(null)
+        setStatus(`${service}: ${err instanceof Error ? err.message : String(err)}`)
+        setRuns((prev) => {
+          const next = { ...prev }
+          delete next[service]
+          return next
+        })
       } finally {
         const sources = await window.backfile.readSources(selected.path)
         patchArticle(selected.path, sources)
@@ -722,7 +748,7 @@ export function App(): JSX.Element {
                 <button
                   className="btn"
                   onClick={analyze}
-                  disabled={analyzing || !!batch || selected.documents.length === 0}
+                  disabled={analyzing || selected.documents.length === 0}
                   title={
                     selected.documents.length === 0
                       ? 'No documents in this folder to read links from'
@@ -734,17 +760,20 @@ export function App(): JSX.Element {
 
                 <span className="toolbar-divider" />
 
-                {batch ? (
-                  <button className="btn btn-danger" onClick={() => window.backfile.cancelCapture()}>
-                    Stop capturing
+                <CaptureMenu
+                  pending={{ ...pendingCounts, video: videoPending }}
+                  videoAvailable={videoAvailable}
+                  disabled={analyzing}
+                  running={Object.keys(runs) as ServiceId[]}
+                  onRun={captureAll}
+                />
+                {anyRunning && (
+                  <button
+                    className="btn btn-danger"
+                    onClick={() => window.backfile.cancelCapture()}
+                  >
+                    Stop all
                   </button>
-                ) : (
-                  <CaptureMenu
-                    pending={{ ...pendingCounts, video: videoPending }}
-                    videoAvailable={videoAvailable}
-                    disabled={analyzing}
-                    onRun={captureAll}
-                  />
                 )}
 
                 <button
@@ -855,45 +884,47 @@ export function App(): JSX.Element {
         )}
       </div>
 
-      {batch && (
-        <div className={`batchbar${batch.needsHuman ? ' needs-human' : ''}`}>
+      {Object.entries(runs).map(([service, run]) => (
+        <div key={service} className={`batchbar${run.needsHuman ? ' needs-human' : ''}`}>
+          <span className="batchbar-service">{SERVICE_LABEL[service as ServiceId]}</span>
           <div className="batchbar-track">
             <div
               className="batchbar-fill"
               style={{
-                width: batch.total ? `${Math.round((batch.done / batch.total) * 100)}%` : '0%'
+                width: run.total ? `${Math.round((run.done / run.total) * 100)}%` : '0%'
               }}
             />
           </div>
           <span className="small batchbar-label">
-            {batch.needsHuman
+            {run.needsHuman
               ? 'Stuck or waiting on a CAPTCHA — finish it in the pane, or skip it.'
-              : `${batch.done} of ${batch.total}`}
-            {batch.url && <span className="muted"> · {batch.url}</span>}
+              : `${run.done} of ${run.total}`}
+            {run.url && <span className="muted"> · {run.url}</span>}
           </span>
           <div className="batchbar-actions">
-            {batch.url && (
+            {run.url && (
+              <button className="chip" onClick={() => openInPane(run.url)}>
+                Show it
+              </button>
+            )}
+            {service === 'archiveIs' && (
               <button
                 className="chip"
-                title="Open the stuck source in a new tab so you can see what happened"
-                onClick={() => openInPane(batch.url)}
+                title="Give up on this one and move to the next source"
+                onClick={() => window.backfile.skipCapture(service as ServiceId)}
               >
-                Show it
+                Skip
               </button>
             )}
             <button
               className="chip"
-              title="Give up on this one and move to the next source"
-              onClick={() => window.backfile.skipCapture()}
+              onClick={() => window.backfile.cancelCapture(service as ServiceId)}
             >
-              Skip
-            </button>
-            <button className="chip" onClick={() => window.backfile.cancelCapture()}>
-              Stop all
+              Stop
             </button>
           </div>
         </div>
-      )}
+      ))}
 
       {addingSource && selected && (
         <AddSourceDialog
