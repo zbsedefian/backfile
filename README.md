@@ -22,12 +22,10 @@ Point Backfile at the folder where you keep your article folders. For any articl
 
 ## sources.csv is the source of truth
 
-Backfile has no hidden database. Each article folder gets a `sources.csv`:
+Backfile's database is `sources.csv`, to be opened in Excel. Each article folder gets one.
 
 | status | url | anchor_text | archive_is | wayback | local_path | captured_at | found_in | excluded | excluded_reason | notes |
 |---|---|---|---|---|---|---|---|---|---|---|
-
-It opens in Excel, diffs cleanly in git, and remains completely readable if you ever uninstall this app.
 
 ## Design decisions worth knowing
 
@@ -38,8 +36,6 @@ It opens in Excel, diffs cleanly in git, and remains completely readable if you 
 **Wayback is optional.** It is genuinely useful and genuinely flaky (frequent 503s). It is off unless you ask for it, and Backfile checks for an existing snapshot before submitting a new one.
 
 **DOI links are excluded automatically.** DOI, Springer, JSTOR, PubMed and arXiv links resolve permanently by design. Chasing snapshots for them is busywork, so they are marked as needing no archive.
-
-**Analysis never destroys work.** A source cut from a later draft keeps its row and its snapshots.
 
 ## Keyboard
 
