@@ -37,23 +37,25 @@ export async function analyzeArticle(
   let updated = 0
   let imported = 0
 
-  /** Sort a known snapshot into the right column. */
-  const fieldForSnapshot = (snapshot: string): 'archiveIs' | 'wayback' =>
-    /web\.archive\.org/i.test(snapshot) ? 'wayback' : 'archiveIs'
-
-  for (const [url, { link, foundIn, knownArchive }] of found) {
+  for (const [url, { link, foundIn, knownArchiveIs, knownWayback }] of found) {
     const current = byUrl.get(url)
     if (current) {
-      const before = JSON.stringify([current.foundIn, current.anchorText, current.archiveIs, current.wayback])
+      const before = JSON.stringify([
+        current.foundIn,
+        current.anchorText,
+        current.archiveIs,
+        current.wayback
+      ])
       current.foundIn = foundIn
       if (!current.anchorText && link.anchorText) current.anchorText = link.anchorText
-      // Adopt a snapshot the link list already recorded, but never overwrite one.
-      if (knownArchive) {
-        const field = fieldForSnapshot(knownArchive)
-        if (!current[field]) {
-          current[field] = knownArchive
-          imported++
-        }
+      // Adopt snapshots the document already carried, but never overwrite one.
+      if (knownArchiveIs && !current.archiveIs) {
+        current.archiveIs = knownArchiveIs
+        imported++
+      }
+      if (knownWayback && !current.wayback) {
+        current.wayback = knownWayback
+        imported++
       }
       if (
         JSON.stringify([current.foundIn, current.anchorText, current.archiveIs, current.wayback]) !==
@@ -64,17 +66,20 @@ export async function analyzeArticle(
       continue
     }
     const permanent = isPermanentCitation(url)
-    const snapshotField = knownArchive ? fieldForSnapshot(knownArchive) : null
-    if (knownArchive) imported++
+    if (knownArchiveIs) imported++
+    if (knownWayback) imported++
     byUrl.set(url, {
       url,
       anchorText: link.anchorText,
       foundIn,
-      archiveIs: snapshotField === 'archiveIs' ? knownArchive! : '',
-      wayback: snapshotField === 'wayback' ? knownArchive! : '',
+      archiveIs: knownArchiveIs ?? '',
+      wayback: knownWayback ?? '',
       localPath: '',
       videoPath: '',
-      capturedAt: '',
+      capturedAt:
+        knownArchiveIs || knownWayback
+          ? new Date().toISOString().slice(0, 19).replace('T', ' ')
+          : '',
       notes: '',
       // Pre-excluding DOI and repository links keeps the work queue honest:
       // they are already permanent, and chasing snapshots for them is busywork.
