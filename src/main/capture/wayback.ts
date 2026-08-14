@@ -79,24 +79,43 @@ export const waybackAdapter: CaptureAdapter = {
 
     try {
       /*
-       * Submitted as a POST form rather than GET /save/<url>.
+       * GET /save/<percent-encoded url>, following the redirect to the snapshot.
        *
-       * With the URL in the path, the target's own query string is read as the
-       * save request's query string — so any source carrying "?op=1" or a utm
-       * tag came back HTTP 500, while the identical URL without a query
-       * succeeded. Putting the URL in the body removes the ambiguity entirely.
+       * Two wrong turns are worth recording. Passing the URL raw in the path
+       * meant its own query string was read as the save request's query string,
+       * so any source carrying "?op=1" or a utm tag returned HTTP 500 while the
+       * same URL without a query succeeded. Encoding the whole URL fixes that.
+       *
+       * Submitting it as a POST form fixes it too, but POST /save is the web
+       * UI's asynchronous job endpoint: it answers 200 with a job page, no
+       * redirect and no snapshot address, so there was nothing to record and
+       * every capture reported "saved, but no snapshot URL was returned".
        */
       const res = await fetchWithTimeout(
-        'https://web.archive.org/save',
+        `https://web.archive.org/save/${encodeURIComponent(url)}`,
         SAVE_TIMEOUT_MS,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: new URLSearchParams({ url }).toString()
-        },
+        {},
         ctx?.signal
       )
 
+      if (res.status === 429) {
+        return fail(
+          'wayback',
+          url,
+          'rate limited by the Internet Archive — wait a few minutes and run it again'
+        )
+      }
+      // 5xx here is usually the Archive failing to fetch the target rather than
+      // the Archive being down — plenty of publishers block its crawler
+      // outright. Saying so stops it reading as a bug in Backfile.
+      if (res.status >= 500) {
+        return fail(
+          'wayback',
+          url,
+          `the Internet Archive could not fetch this page (HTTP ${res.status}) — ` +
+            'many publishers block its crawler, so archive.is may be the only option here'
+        )
+      }
       if (!res.ok) return fail('wayback', url, `HTTP ${res.status}: ${res.statusText}`)
 
       // A successful save redirects to the snapshot it just made.

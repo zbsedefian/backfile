@@ -5,3 +5,10 @@ dist/
 *.log
 .DS_Store
 probe*.ts
+
+# Screen recordings and media dropped into the project folder
+*.mov
+*.mp4
+*.webm
+*.png
+!build/icon.png

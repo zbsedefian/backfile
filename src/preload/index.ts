@@ -57,6 +57,8 @@ const api = {
   updateSourceUrl: (articlePath: string, oldUrl: string, newUrl: string): Promise<SourceLink[]> =>
     ipcRenderer.invoke('sources:updateUrl', articlePath, oldUrl, newUrl),
   capture: (req: CaptureRequest): Promise<CaptureResult> => ipcRenderer.invoke('capture:run', req),
+  clearCapture: (articlePath: string, url: string, service: ServiceId): Promise<SourceLink[]> =>
+    ipcRenderer.invoke('capture:clear', articlePath, url, service),
   captureAll: (articlePath: string, service: ServiceId): Promise<void> =>
     ipcRenderer.invoke('capture:batch', articlePath, service),
   /** Omit the service to stop everything currently running. */

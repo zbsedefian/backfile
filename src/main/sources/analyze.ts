@@ -91,6 +91,22 @@ export async function analyzeArticle(
   return { links, added, updated, orphaned, imported }
 }
 
+/** Forget one recorded capture so it can be redone. */
+export async function clearCapture(
+  articlePath: string,
+  url: string,
+  field: 'archiveIs' | 'wayback' | 'localPath' | 'videoPath'
+): Promise<SourceLink[]> {
+  return withLock(articlePath, async () => {
+    const links = await readSources(articlePath)
+    const link = links.find((l) => l.url === url)
+    if (!link) return links
+    link[field] = ''
+    await writeSources(articlePath, links)
+    return links
+  })
+}
+
 /**
  * Record a capture result against a single link and persist it.
  *

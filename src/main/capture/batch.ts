@@ -37,19 +37,34 @@ const FIELD_FOR: Record<ServiceId, 'archiveIs' | 'wayback' | 'localPath' | 'vide
   video: 'videoPath'
 }
 
-/** Pause between archive.is submissions so a batch is not mistaken for an attack. */
-const POLITE_GAP_MS = 1_200
-
 /**
- * Local downloads run several at a time because each one hits a different
- * publisher, so there is no single service to overwhelm. archive.is is the
- * opposite: every request lands on one host that already treats automation as
- * hostile, and firing fifty at once is the fastest possible way to get the
- * journalist's IP banned from the service the whole app depends on. It also
- * cannot be parallelised even in principle — there is one capture tab, and a
- * CAPTCHA has to be answered by a human, once, in order.
+ * How hard each service may be pushed.
+ *
+ * Local copies are the only ones that parallelise: every download hits a
+ * different publisher, so there is no single host to overwhelm. Everything else
+ * lands on one server.
+ *
+ * archive.is cannot be parallelised even in principle — there is one capture
+ * tab and a CAPTCHA a human answers once, in order. The Internet Archive rate
+ * limits unauthenticated saves aggressively, and grouping it with the local
+ * pool meant four concurrent submissions with no pause, which earned an
+ * immediate 429 and made the whole run look broken. yt-dlp is held to one at a
+ * time because each download is heavy on disk and CPU.
  */
-const LOCAL_CONCURRENCY = 4
+const CONCURRENCY: Record<ServiceId, number> = {
+  archiveIs: 1,
+  wayback: 1,
+  local: 4,
+  video: 1
+}
+
+/** Pause between requests, so a batch is never mistaken for an attack. */
+const GAP_MS: Record<ServiceId, number> = {
+  archiveIs: 1_200,
+  wayback: 3_000,
+  local: 0,
+  video: 0
+}
 
 export class BatchRunner {
   private cancelled = false
@@ -153,33 +168,24 @@ export class BatchRunner {
       return 'failed'
     }
 
-    if (service === 'archiveIs') {
-      // Strictly one at a time: one tab, one CAPTCHA, answered in order.
-      for (const link of queue) {
-        if (this.cancelled) break
-        if ((await runOne(link.url)) === 'cancelled') {
+    const pending = [...queue]
+    const gap = GAP_MS[service]
+    const worker = async (): Promise<void> => {
+      while (!this.cancelled) {
+        const next = pending.shift()
+        if (!next) return
+        if ((await runOne(next.url)) === 'cancelled') {
           this.cancelled = true
-          break
+          return
         }
-        if (!this.cancelled) await new Promise((r) => setTimeout(r, POLITE_GAP_MS))
-      }
-    } else {
-      // Independent hosts, so a small pool of workers drains the queue together.
-      const pending = [...queue]
-      const worker = async (): Promise<void> => {
-        while (!this.cancelled) {
-          const next = pending.shift()
-          if (!next) return
-          if ((await runOne(next.url)) === 'cancelled') {
-            this.cancelled = true
-            return
-          }
+        if (gap && !this.cancelled && pending.length > 0) {
+          await new Promise((r) => setTimeout(r, gap))
         }
       }
-      await Promise.all(
-        Array.from({ length: Math.min(LOCAL_CONCURRENCY, pending.length) }, worker)
-      )
     }
+    await Promise.all(
+      Array.from({ length: Math.min(CONCURRENCY[service], pending.length) }, worker)
+    )
 
     this.session?.close()
     this.session = null

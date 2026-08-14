@@ -119,6 +119,10 @@ export const videoAdapter: CaptureAdapter = {
           '--write-thumbnail',
           '--merge-output-format',
           'mp4',
+          // Filenames are derived from the video id, so without this yt-dlp
+          // sees the existing file and skips — meaning a re-capture to replace
+          // a bad download would silently do nothing.
+          '--force-overwrites',
           '-o',
           template,
           '--print',

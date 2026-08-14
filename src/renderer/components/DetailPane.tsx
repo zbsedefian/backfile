@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { SourceLink } from '../../shared/types'
+import type { ServiceId, SourceLink } from '../../shared/types'
 import { isLikelyVideoPage } from '../../shared/links'
 import { TierBadge } from './Tier'
 
@@ -16,6 +16,9 @@ interface Props {
   onRevealLocal: (relativePath: string) => void
   onEditUrl: (oldUrl: string, newUrl: string) => void
   onDelete: (url: string) => void
+  /** Discard a recorded capture and run it again. */
+  onRecapture: (url: string, service: ServiceId) => void
+  recapturing: string | null
 }
 
 export function DetailPane({
@@ -28,7 +31,9 @@ export function DetailPane({
   onViewLocal,
   onRevealLocal,
   onEditUrl,
-  onDelete
+  onDelete,
+  onRecapture,
+  recapturing
 }: Props): JSX.Element {
   const [editing, setEditing] = useState(false)
   const [draftUrl, setDraftUrl] = useState('')
@@ -162,9 +167,21 @@ export function DetailPane({
       <div className="detail-block">
         <div className="detail-label">archive.is</div>
         {link.archiveIs ? (
-          <button className="linklike mono small" onClick={() => onOpen(link.archiveIs)}>
-            {link.archiveIs}
-          </button>
+          <>
+            <button className="linklike mono small" onClick={() => onOpen(link.archiveIs)}>
+              {link.archiveIs}
+            </button>
+            <div className="detail-actions">
+              <button
+                className="chip"
+                disabled={recapturing === 'archiveIs'}
+                title="Discard this snapshot and capture it again"
+                onClick={() => onRecapture(link.url, 'archiveIs')}
+              >
+                {recapturing === 'archiveIs' ? 'Capturing…' : 'Re-capture'}
+              </button>
+            </div>
+          </>
         ) : (
           <span className="muted small">not captured</span>
         )}
@@ -173,9 +190,20 @@ export function DetailPane({
       <div className="detail-block">
         <div className="detail-label">Wayback</div>
         {link.wayback ? (
-          <button className="linklike mono small" onClick={() => onOpen(link.wayback)}>
-            {link.wayback}
-          </button>
+          <>
+            <button className="linklike mono small" onClick={() => onOpen(link.wayback)}>
+              {link.wayback}
+            </button>
+            <div className="detail-actions">
+              <button
+                className="chip"
+                disabled={recapturing === 'wayback'}
+                onClick={() => onRecapture(link.url, 'wayback')}
+              >
+                {recapturing === 'wayback' ? 'Capturing…' : 'Re-capture'}
+              </button>
+            </div>
+          </>
         ) : (
           <span className="muted small">not captured</span>
         )}
@@ -204,6 +232,13 @@ export function DetailPane({
               <button className="chip" onClick={() => onRevealLocal(link.localPath)}>
                 Show in Finder
               </button>
+              <button
+                className="chip"
+                disabled={recapturing === 'local'}
+                onClick={() => onRecapture(link.url, 'local')}
+              >
+                {recapturing === 'local' ? 'Capturing…' : 'Re-capture'}
+              </button>
             </div>
           </>
         ) : (
@@ -223,6 +258,14 @@ export function DetailPane({
                 </button>
                 <button className="chip" onClick={() => onRevealLocal(link.videoPath)}>
                   Show in Finder
+                </button>
+                <button
+                  className="chip"
+                  disabled={recapturing === 'video'}
+                  title="Download it again, replacing the existing file"
+                  onClick={() => onRecapture(link.url, 'video')}
+                >
+                  {recapturing === 'video' ? 'Downloading…' : 'Re-download'}
                 </button>
               </div>
             </>

@@ -6,7 +6,7 @@ import { pathToFileURL } from 'node:url'
 import { findYtDlp, resetYtDlpCache } from './capture/video'
 import { Article, CaptureRequest, CaptureResult, ServiceId, SourceLink } from '../shared/types'
 import { reloadArticle, scanWorkspace } from './project/scan'
-import { analyzeArticle, recordCapture } from './sources/analyze'
+import { analyzeArticle, clearCapture, recordCapture } from './sources/analyze'
 import { readSources, writeSources } from './sources/csv'
 import { addSource, createCollection, NewSource, removeSource, updateSourceUrl } from './sources/manual'
 import { adapterFor } from './capture'
@@ -211,6 +211,13 @@ function registerIpc(): void {
     'sources:updateUrl',
     async (_e, articlePath: string, oldUrl: string, newUrl: string): Promise<SourceLink[]> => {
       return updateSourceUrl(articlePath, oldUrl, newUrl)
+    }
+  )
+
+  ipcMain.handle(
+    'capture:clear',
+    async (_e, articlePath: string, url: string, service: ServiceId): Promise<SourceLink[]> => {
+      return clearCapture(articlePath, url, FIELD_FOR[service])
     }
   )
 

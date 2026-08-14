@@ -385,6 +385,24 @@ export function App(): JSX.Element {
     [selected, patchArticle]
   )
 
+  const [recapturing, setRecapturing] = useState<string | null>(null)
+
+  /** Discard a recorded capture and immediately redo it. */
+  const recapture = useCallback(
+    async (url: string, service: ServiceId) => {
+      if (!selected) return
+      setRecapturing(service)
+      try {
+        const cleared = await window.backfile.clearCapture(selected.path, url, service)
+        patchArticle(selected.path, cleared)
+        await capture(url, service)
+      } finally {
+        setRecapturing(null)
+      }
+    },
+    [selected, patchArticle, capture]
+  )
+
   const toggleExcluded = useCallback(
     async (url: string, excluded: boolean) => {
       if (!selected) return
@@ -878,6 +896,8 @@ export function App(): JSX.Element {
             onRevealLocal={revealLocal}
             onEditUrl={editSourceUrl}
             onDelete={deleteSource}
+            onRecapture={recapture}
+            recapturing={recapturing}
           />
         ) : (
           <div />
