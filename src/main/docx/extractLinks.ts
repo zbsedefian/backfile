@@ -10,6 +10,7 @@
 
 import { promises as fs } from 'node:fs'
 import { unzipSync } from 'fflate'
+import { normalizeUrl } from '../../shared/links'
 import { extractLinksFromText, isTextSource } from './extractFromText'
 import {
   extractLinksFromHtmlFile,
@@ -65,19 +66,6 @@ function visibleText(fragment: string): string {
   let m: RegExpExecArray | null
   while ((m = re.exec(fragment)) !== null) parts.push(decodeEntities(m[1]))
   return parts.join('').replace(/\s+/g, ' ').trim()
-}
-
-/**
- * Trim sentence punctuation that Word glues onto a URL. This applies to stored
- * hyperlink targets too, not just bare text: authors routinely select the
- * trailing semicolon along with the address when they paste, and Word faithfully
- * preserves it inside the relationship, producing a target that 404s.
- */
-function normalizeUrl(url: string): string {
-  let out = url.trim().replace(/[.,;:]+$/, '')
-  // Drop a closing paren only when nothing opened it, e.g. "(see https://x.com/a)".
-  if (out.endsWith(')') && !out.includes('(')) out = out.slice(0, -1)
-  return out
 }
 
 /** Bare URLs that were typed as plain text and never turned into hyperlinks. */

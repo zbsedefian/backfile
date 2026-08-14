@@ -28,10 +28,11 @@ export interface BatchProgress {
   failed?: number
 }
 
-const FIELD_FOR: Record<ServiceId, 'archiveIs' | 'wayback' | 'localPath'> = {
+const FIELD_FOR: Record<ServiceId, 'archiveIs' | 'wayback' | 'localPath' | 'videoPath'> = {
   archiveIs: 'archiveIs',
   wayback: 'wayback',
-  local: 'localPath'
+  local: 'localPath',
+  video: 'videoPath'
 }
 
 /** Pause between archive.is submissions so a batch is not mistaken for an attack. */

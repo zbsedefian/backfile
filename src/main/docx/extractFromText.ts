@@ -9,6 +9,8 @@
  * imported as finished work rather than re-queued as work to do.
  */
 
+import { normalizeUrl } from '../../shared/links'
+
 export interface ExtractedTextLink {
   url: string
   /** A snapshot URL that the file already recorded alongside the source. */
@@ -17,11 +19,7 @@ export interface ExtractedTextLink {
 
 const URL_RE = /https?:\/\/[^\s<>"'\]|)]+/g
 
-function tidy(url: string): string {
-  let out = url.trim().replace(/[.,;:]+$/, '')
-  if (out.endsWith(')') && !out.includes('(')) out = out.slice(0, -1)
-  return out
-}
+const tidy = normalizeUrl
 
 function isArchiveSnapshot(url: string): boolean {
   return /^https?:\/\/(?:archive\.(?:ph|is|today|li|vn|md|fo)|web\.archive\.org)\//i.test(url)

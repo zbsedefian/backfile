@@ -71,6 +71,9 @@ const api = {
 
   // ---- embedded browser pane ----
   browserOpen: (url: string): Promise<string> => ipcRenderer.invoke('browser:open', url),
+  viewCapture: (articlePath: string, relativePath: string): Promise<string | null> =>
+    ipcRenderer.invoke('browser:openCapture', articlePath, relativePath),
+  videoAvailable: (): Promise<boolean> => ipcRenderer.invoke('video:available'),
   browserSetBounds: (bounds: Bounds): Promise<void> =>
     ipcRenderer.invoke('browser:setBounds', bounds),
   browserActivate: (id: string): Promise<void> => ipcRenderer.invoke('browser:activate', id),

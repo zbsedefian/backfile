@@ -13,6 +13,7 @@ function link(over: Partial<SourceLink> = {}): SourceLink {
     archiveIs: '',
     wayback: '',
     localPath: '',
+    videoPath: '',
     capturedAt: '',
     notes: '',
     excluded: false,

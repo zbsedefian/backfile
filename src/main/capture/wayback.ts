@@ -13,18 +13,30 @@ import { CaptureResult } from '../../shared/types'
 const AVAILABILITY_TIMEOUT_MS = 15_000
 const SAVE_TIMEOUT_MS = 60_000
 
-async function fetchWithTimeout(url: string, ms: number, redirect: RequestRedirect = 'follow') {
+const USER_AGENT =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 ' +
+  '(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+
+async function fetchWithTimeout(url: string, ms: number, init: RequestInit = {}) {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), ms)
   try {
     return await fetch(url, {
+      redirect: 'follow',
+      ...init,
       signal: controller.signal,
-      redirect,
-      headers: { 'User-Agent': 'Backfile/0.1 (journalist source archiving)' }
+      headers: { 'User-Agent': USER_AGENT, ...(init.headers ?? {}) }
     })
   } finally {
     clearTimeout(timer)
   }
+}
+
+/** Pull the snapshot address out of whatever URL the save request landed on. */
+function snapshotFrom(finalUrl: string): string | null {
+  return /^https?:\/\/web\.archive\.org\/web\/\d+/.test(finalUrl)
+    ? finalUrl.replace(/^http:\/\//, 'https://')
+    : null
 }
 
 export const waybackAdapter: CaptureAdapter = {
@@ -56,18 +68,31 @@ export const waybackAdapter: CaptureAdapter = {
     if (existing) return ok('wayback', url, existing)
 
     try {
-      const res = await fetchWithTimeout(
-        `https://web.archive.org/save/${url}`,
-        SAVE_TIMEOUT_MS
-      )
-      if (!res.ok) {
-        return fail('wayback', url, `HTTP ${res.status}: ${res.statusText}`)
-      }
+      /*
+       * Submitted as a POST form rather than GET /save/<url>.
+       *
+       * With the URL in the path, the target's own query string is read as the
+       * save request's query string — so any source carrying "?op=1" or a utm
+       * tag came back HTTP 500, while the identical URL without a query
+       * succeeded. Putting the URL in the body removes the ambiguity entirely.
+       */
+      const res = await fetchWithTimeout('https://web.archive.org/save', SAVE_TIMEOUT_MS, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ url }).toString()
+      })
+
+      if (!res.ok) return fail('wayback', url, `HTTP ${res.status}: ${res.statusText}`)
+
+      // A successful save redirects to the snapshot it just made.
+      const landed = snapshotFrom(res.url)
+      if (landed) return ok('wayback', url, landed)
+
       const location = res.headers.get('content-location')
       if (location) return ok('wayback', url, `https://web.archive.org${location}`)
 
-      // Save succeeded but gave no snapshot header; ask the availability API,
-      // which by now should know about the capture we just triggered.
+      // Saved but gave no snapshot address; ask the availability API, which by
+      // now should know about the capture we just triggered.
       const confirmed = await this.lookup!(url)
       if (confirmed) return ok('wayback', url, confirmed)
       return fail('wayback', url, 'saved, but no snapshot URL was returned')

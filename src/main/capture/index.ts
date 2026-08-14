@@ -9,11 +9,13 @@ import { CaptureAdapter } from './types'
 import { archiveIsAdapter } from './archiveIs'
 import { waybackAdapter } from './wayback'
 import { localAdapter } from './local'
+import { videoAdapter } from './video'
 
 const ADAPTERS: Record<ServiceId, CaptureAdapter> = {
   archiveIs: archiveIsAdapter,
   wayback: waybackAdapter,
-  local: localAdapter
+  local: localAdapter,
+  video: videoAdapter
 }
 
 export function adapterFor(service: ServiceId): CaptureAdapter {

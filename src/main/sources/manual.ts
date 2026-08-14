@@ -10,7 +10,7 @@
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { SourceLink, isPermanentCitation } from '../../shared/types'
-import { parsePastedLink } from '../../shared/links'
+import { normalizeUrl, parsePastedLink } from '../../shared/links'
 import { readSources, writeSources, SOURCES_FILENAME } from './csv'
 import { withLock } from './lock'
 
@@ -68,7 +68,7 @@ async function addSourceLocked(
   // Explicit fields win over anything inferred from the pasted URL.
   const archiveIs = input.archiveIs?.trim() || parsed.archiveIs
   const wayback = input.wayback?.trim() || parsed.wayback
-  let url = (parsed.url || '').trim()
+  let url = parsed.url ? normalizeUrl(parsed.url) : ''
 
   if (!url) {
     // Only a snapshot was supplied. Record it under the snapshot's own address
@@ -98,6 +98,7 @@ async function addSourceLocked(
     archiveIs,
     wayback,
     localPath: '',
+    videoPath: '',
     capturedAt: archiveIs || wayback ? new Date().toISOString().slice(0, 19).replace('T', ' ') : '',
     notes: input.notes ?? (parsed.snapshotOnly && !parsed.url ? 'source URL not yet recorded' : ''),
     excluded: permanent,

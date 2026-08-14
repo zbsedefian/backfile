@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { SourceLink } from '../../shared/types'
+import { isLikelyVideoPage } from '../../shared/links'
 import { TierBadge } from './Tier'
 
 interface Props {
@@ -11,6 +12,7 @@ interface Props {
   /** Open in the system browser. */
   onOpenExternal: (url: string) => void
   onOpenLocal: (relativePath: string) => void
+  onViewLocal: (relativePath: string) => void
   onRevealLocal: (relativePath: string) => void
   onEditUrl: (oldUrl: string, newUrl: string) => void
   onDelete: (url: string) => void
@@ -23,6 +25,7 @@ export function DetailPane({
   onOpen,
   onOpenExternal,
   onOpenLocal,
+  onViewLocal,
   onRevealLocal,
   onEditUrl,
   onDelete
@@ -190,8 +193,13 @@ export function DetailPane({
               {link.localPath}
             </button>
             <div className="detail-actions">
+              {/* Chromium reads MHTML natively, which is why captures are saved
+                  in it — the OS often has nothing that will open one. */}
+              <button className="chip" onClick={() => onViewLocal(link.localPath)}>
+                View here
+              </button>
               <button className="chip" onClick={() => onOpenLocal(link.localPath)}>
-                Open file
+                Open externally
               </button>
               <button className="chip" onClick={() => onRevealLocal(link.localPath)}>
                 Show in Finder
@@ -202,6 +210,31 @@ export function DetailPane({
           <span className="muted small">not captured</span>
         )}
       </div>
+
+      {(link.videoPath || isLikelyVideoPage(link.url)) && (
+        <div className="detail-block">
+          <div className="detail-label">Video</div>
+          {link.videoPath ? (
+            <>
+              <span className="mono small">{link.videoPath}</span>
+              <div className="detail-actions">
+                <button className="chip" onClick={() => onOpenLocal(link.videoPath)}>
+                  Play
+                </button>
+                <button className="chip" onClick={() => onRevealLocal(link.videoPath)}>
+                  Show in Finder
+                </button>
+              </div>
+            </>
+          ) : (
+            <span className="muted small">
+              This is a video page. A local copy saves the title and description but not the
+              video itself, which is streamed separately \u2014 use Capture all \u203a Video, which
+              needs yt-dlp installed.
+            </span>
+          )}
+        </div>
+      )}
 
       {link.capturedAt && (
         <div className="detail-block">

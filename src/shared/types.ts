@@ -7,8 +7,8 @@
 /** Which archives a source has, expressed the way it is shown in the UI. */
 export type ArchiveTier = 'none' | 'bronze' | 'silver' | 'gold'
 
-/** The three independent places a source can be preserved. */
-export type ServiceId = 'archiveIs' | 'wayback' | 'local'
+/** The independent places a source can be preserved. */
+export type ServiceId = 'archiveIs' | 'wayback' | 'local' | 'video'
 
 export interface SourceLink {
   /** The original URL as it appeared in the document. */
@@ -23,6 +23,15 @@ export interface SourceLink {
   wayback: string
   /** Path of the local capture, relative to the article folder. */
   localPath: string
+  /**
+   * Path of a downloaded video, relative to the article folder.
+   *
+   * Separate from localPath because they preserve different things: an MHTML
+   * capture of a YouTube page keeps the title, channel and description but
+   * cannot keep the video, which is streamed separately and is usually the
+   * only part that actually matters.
+   */
+  videoPath: string
   /** ISO timestamp of the most recent successful capture. */
   capturedAt: string
   /** Free-text, for the journalist. Never written to by the app. */
@@ -91,7 +100,9 @@ export function isPermanentCitation(url: string): boolean {
  */
 export function tierOf(link: SourceLink): ArchiveTier {
   if (link.excluded) return 'gold'
-  const has = [!!link.archiveIs, !!link.wayback, !!link.localPath]
+  // A downloaded video counts as the local copy: for a video page it is the
+  // only thing that actually preserves what was cited.
+  const has = [!!link.archiveIs, !!link.wayback, !!link.localPath || !!link.videoPath]
   const count = has.filter(Boolean).length
   if (count === 0) return 'none'
   if (has[0] && has[1] && has[2]) return 'gold'

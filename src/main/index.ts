@@ -1,6 +1,8 @@
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell } from 'electron'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
+import { pathToFileURL } from 'node:url'
+import { findYtDlp, resetYtDlpCache } from './capture/video'
 import { Article, CaptureRequest, CaptureResult, ServiceId, SourceLink } from '../shared/types'
 import { reloadArticle, scanWorkspace } from './project/scan'
 import { analyzeArticle, recordCapture } from './sources/analyze'
@@ -73,10 +75,11 @@ function createWindow(): void {
 }
 
 /** The field on a SourceLink that each service writes its result into. */
-const FIELD_FOR: Record<ServiceId, 'archiveIs' | 'wayback' | 'localPath'> = {
+const FIELD_FOR: Record<ServiceId, 'archiveIs' | 'wayback' | 'localPath' | 'videoPath'> = {
   archiveIs: 'archiveIs',
   wayback: 'wayback',
-  local: 'localPath'
+  local: 'localPath',
+  video: 'videoPath'
 }
 
 function registerIpc(): void {
@@ -245,6 +248,30 @@ function registerIpc(): void {
 
   ipcMain.handle('browser:open', async (_e, url: string): Promise<string> => {
     return browserPane.open(url)
+  })
+
+  /**
+   * View a captured file in the pane. Chromium reads MHTML natively, which is
+   * the whole reason captures are stored in that format — the alternative is
+   * handing the file to an OS that, on macOS, often has nothing to open it with.
+   */
+  ipcMain.handle(
+    'browser:openCapture',
+    async (_e, articlePath: string, relativePath: string): Promise<string | null> => {
+      const full = path.resolve(articlePath, relativePath)
+      if (!full.startsWith(path.resolve(articlePath))) return null
+      try {
+        await fs.access(full)
+      } catch {
+        return null
+      }
+      return browserPane.open(pathToFileURL(full).toString())
+    }
+  )
+
+  ipcMain.handle('video:available', async (): Promise<boolean> => {
+    resetYtDlpCache()
+    return (await findYtDlp()) !== null
   })
   ipcMain.handle('browser:setBounds', async (_e, bounds: Bounds): Promise<void> => {
     browserPane.setBounds(bounds)

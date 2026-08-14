@@ -63,20 +63,65 @@ async function toArticle(dir: string, name: string): Promise<Article | null> {
   }
 }
 
+/**
+ * Folders that are part of an article rather than articles themselves, or that
+ * are never worth walking into.
+ */
+const SKIP_DIRS = new Set([
+  'archive',
+  'node_modules',
+  '.git',
+  'images',
+  'Images',
+  'img',
+  'assets',
+  'local_copies'
+])
+
+/**
+ * How deep to look for collections below the chosen folder.
+ *
+ * Filing by year or by desk is completely normal, and a one-level scan made
+ * those articles simply invisible with no explanation. Three levels covers
+ * every real filing scheme without turning "open folder" into a disk crawl.
+ */
+const MAX_DEPTH = 3
+
 export async function scanWorkspace(root: string): Promise<Article[]> {
-  const entries = await fs.readdir(root, { withFileTypes: true })
   const articles: Article[] = []
 
   // The root itself may be a single article folder rather than a container.
   const self = await toArticle(root, path.basename(root))
   if (self) articles.push(self)
 
-  for (const entry of entries) {
-    if (!entry.isDirectory() || entry.name.startsWith('.')) continue
-    const article = await toArticle(path.join(root, entry.name), entry.name)
-    if (article) articles.push(article)
+  const walk = async (dir: string, depth: number): Promise<void> => {
+    if (depth > MAX_DEPTH) return
+    let entries
+    try {
+      entries = await fs.readdir(dir, { withFileTypes: true })
+    } catch {
+      // An unreadable folder is skipped rather than sinking the whole scan.
+      return
+    }
+
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.name.startsWith('.')) continue
+      if (SKIP_DIRS.has(entry.name)) continue
+
+      const full = path.join(dir, entry.name)
+      // Name by path relative to the root, so "2026/CAM_05" is distinguishable
+      // from "2025/CAM_05" in the sidebar.
+      const article = await toArticle(full, path.relative(root, full))
+      if (article) {
+        articles.push(article)
+        // An article's own subfolders hold its material, not further articles.
+        continue
+      }
+      await walk(full, depth + 1)
+    }
   }
 
+  await walk(root, 1)
   return articles.sort((a, b) => a.name.localeCompare(b.name))
 }
 

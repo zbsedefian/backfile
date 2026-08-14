@@ -73,6 +73,7 @@ export async function analyzeArticle(
       archiveIs: snapshotField === 'archiveIs' ? knownArchive! : '',
       wayback: snapshotField === 'wayback' ? knownArchive! : '',
       localPath: '',
+      videoPath: '',
       capturedAt: '',
       notes: '',
       // Pre-excluding DOI and repository links keeps the work queue honest:
@@ -101,7 +102,7 @@ export async function analyzeArticle(
 export async function recordCapture(
   articlePath: string,
   url: string,
-  field: 'archiveIs' | 'wayback' | 'localPath',
+  field: 'archiveIs' | 'wayback' | 'localPath' | 'videoPath',
   value: string
 ): Promise<SourceLink[]> {
   return withLock(articlePath, async () => {

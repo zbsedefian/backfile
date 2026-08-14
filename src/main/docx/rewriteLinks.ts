@@ -16,6 +16,7 @@ import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { unzipSync, zipSync } from 'fflate'
 import { SourceLink } from '../../shared/types'
+import { normalizeUrl } from '../../shared/links'
 
 /** Relationship parts that can carry external hyperlinks. */
 const RELS_PARTS = [
@@ -69,12 +70,12 @@ function decodeAttr(value: string): string {
     .replace(/&amp;/g, '&')
 }
 
-/** Trailing punctuation is stripped at extraction time; match the same way here. */
-function normalize(url: string): string {
-  let out = url.trim().replace(/[.,;:]+$/, '')
-  if (out.endsWith(')') && !out.includes('(')) out = out.slice(0, -1)
-  return out
-}
+/**
+ * The same normaliser extraction uses. If these two ever diverge the rewriter
+ * quietly stops matching links it should have repointed, which is the sort of
+ * failure that only shows up in a published article.
+ */
+const normalize = normalizeUrl
 
 /**
  * Choose the snapshot to publish. archive.is is preferred: it is a fixed

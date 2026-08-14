@@ -483,6 +483,70 @@ body {
   min-width: 0;
 }
 
+.toolbar-divider {
+  width: 1px;
+  align-self: stretch;
+  background: var(--border);
+  margin: 0 2px;
+}
+
+/*
+ * The capture actions are one decision with several targets, not four unrelated
+ * buttons. Grouping them under a single label says that, and stops the toolbar
+ * reading as a wall of equally-weighted choices.
+ */
+.btn-group {
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--bg-raised);
+}
+
+.btn-group-label {
+  display: flex;
+  align-items: center;
+  padding: 0 9px;
+  font-size: 11px;
+  color: var(--text-faint);
+  background: var(--bg);
+  border-right: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.btn-grouped {
+  border: 0;
+  border-right: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-grouped:last-child {
+  border-right: 0;
+}
+
+.btn-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 17px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.btn-grouped:disabled .btn-count {
+  display: none;
+}
+
 .publish-group {
   display: flex;
   align-items: center;

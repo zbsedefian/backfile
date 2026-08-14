@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { RewritePlan } from '../main/docx/rewriteLinks'
 import type { Article, ServiceId, SourceLink } from '../shared/types'
 import { tierOf } from '../shared/types'
+import { isLikelyVideoPage } from '../shared/links'
 import type { TabInfo } from '../main/browser/BrowserPane'
 import { Sidebar } from './components/Sidebar'
 import { SourceTable, busyKey, filterLinks, sortLinks, type Sort } from './components/SourceTable'
@@ -369,6 +370,28 @@ export function App(): JSX.Element {
   }, [selected])
 
   /**
+   * Video pages still missing their video. Only offered when there are any,
+   * since most collections contain none and an always-present button would
+   * imply every source has a video worth downloading.
+   */
+  const videoPending = useMemo(
+    () =>
+      (selected?.sources ?? []).filter(
+        (l) => !l.excluded && !l.videoPath && isLikelyVideoPage(l.url)
+      ).length,
+    [selected]
+  )
+
+  // Checked lazily: yt-dlp is optional, and a GUI app does not inherit the
+  // shell PATH, so a user who can run it in a terminal may still not have it here.
+  const [videoAvailable, setVideoAvailable] = useState<boolean | null>(null)
+  useEffect(() => {
+    if (videoPending > 0 && videoAvailable === null) {
+      void window.backfile.videoAvailable().then(setVideoAvailable)
+    }
+  }, [videoPending, videoAvailable])
+
+  /**
    * Keyboard navigation.
    *
    * Working through a hundred sources is a repetitive job, and reaching for the
@@ -499,6 +522,16 @@ export function App(): JSX.Element {
   const openLocal = useCallback(
     (relativePath: string) => {
       if (selected) void window.backfile.openCapture(selected.path, relativePath)
+    },
+    [selected]
+  )
+
+  const viewLocal = useCallback(
+    async (relativePath: string) => {
+      if (!selected) return
+      setPaneOpen(true)
+      const opened = await window.backfile.viewCapture(selected.path, relativePath)
+      if (!opened) setStatus('That capture file is missing from disk.')
     },
     [selected]
   )
@@ -663,34 +696,66 @@ export function App(): JSX.Element {
                       : 'Read every link out of the documents in this folder'
                   }
                 >
-                  {analyzing ? 'Analyzing…' : 'Analyze links'}
+                  {analyzing ? 'Analyzing\u2026' : 'Analyze links'}
                 </button>
+
+                <span className="toolbar-divider" />
 
                 {batch ? (
                   <button className="btn btn-danger" onClick={() => window.backfile.cancelCapture()}>
-                    Stop
+                    Stop capturing
                   </button>
                 ) : (
-                  <>
+                  <span className="btn-group" role="group">
+                    <span className="btn-group-label">Capture all</span>
                     <button
-                      className="btn"
+                      className="btn btn-grouped"
                       onClick={() => captureAll('archiveIs')}
                       disabled={pendingCounts.archiveIs === 0}
                       title="Run every remaining source through archive.is in the pane below. Expect at most one CAPTCHA."
                     >
-                      Capture all archive.is
-                      {pendingCounts.archiveIs > 0 && ` (${pendingCounts.archiveIs})`}
+                      archive.is
+                      {pendingCounts.archiveIs > 0 && (
+                        <span className="btn-count">{pendingCounts.archiveIs}</span>
+                      )}
                     </button>
                     <button
-                      className="btn"
+                      className="btn btn-grouped"
+                      onClick={() => captureAll('wayback')}
+                      disabled={pendingCounts.wayback === 0}
+                      title="Submit every remaining source to the Wayback Machine."
+                    >
+                      Wayback
+                      {pendingCounts.wayback > 0 && (
+                        <span className="btn-count">{pendingCounts.wayback}</span>
+                      )}
+                    </button>
+                    <button
+                      className="btn btn-grouped"
                       onClick={() => captureAll('local')}
                       disabled={pendingCounts.local === 0}
                       title="Download a local copy of every remaining source."
                     >
-                      Download all
-                      {pendingCounts.local > 0 && ` (${pendingCounts.local})`}
+                      Local
+                      {pendingCounts.local > 0 && (
+                        <span className="btn-count">{pendingCounts.local}</span>
+                      )}
                     </button>
-                  </>
+                    {videoPending > 0 && (
+                      <button
+                        className="btn btn-grouped"
+                        onClick={() => captureAll('video')}
+                        title={
+                          videoAvailable === false
+                            ? 'Requires yt-dlp. Install it with "brew install yt-dlp".'
+                            : 'Download the actual video for every video page. MHTML cannot capture streamed media.'
+                        }
+                      >
+                        Video
+                        <span className="btn-count">{videoPending}</span>
+                      </button>
+                    )}
+                  </span>
                 )}
 
                 <span className="toolbar-sep" />
@@ -715,11 +780,10 @@ export function App(): JSX.Element {
                       disabled={publishing || !publishTarget}
                       title="Preview a copy of this draft with every cited link repointed at its archive snapshot. The original is not modified."
                     >
-                      Publish archived copy…
+                      Publish archived copy\u2026
                     </button>
                   </div>
                 )}
-
               </div>
 
               <SourceTable
@@ -784,6 +848,7 @@ export function App(): JSX.Element {
             onOpen={openInPane}
             onOpenExternal={openExternal}
             onOpenLocal={openLocal}
+            onViewLocal={viewLocal}
             onRevealLocal={revealLocal}
             onEditUrl={editSourceUrl}
             onDelete={deleteSource}

@@ -14,6 +14,7 @@
 import { promises as fs } from 'node:fs'
 import { unzipSync } from 'fflate'
 import { ExtractedLink } from './extractLinks'
+import { normalizeUrl } from '../../shared/links'
 
 function decodeEntities(s: string): string {
   return s
@@ -61,7 +62,7 @@ export function extractLinksFromHtml(html: string): ExtractedLink[] {
   while ((m = re.exec(html)) !== null) {
     const href = /\bhref\s*=\s*["']([^"']+)["']/i.exec(m[1])?.[1]
     if (!href) continue
-    const url = unwrapRedirect(decodeEntities(href).trim())
+    const url = normalizeUrl(unwrapRedirect(decodeEntities(href)))
     if (!/^https?:\/\//i.test(url)) continue
     const anchorText = stripTags(m[2])
     const existing = byUrl.get(url)
@@ -92,7 +93,7 @@ export async function extractLinksFromOdt(filePath: string): Promise<ExtractedLi
   while ((m = re.exec(xml)) !== null) {
     const href = /xlink:href\s*=\s*"([^"]+)"/.exec(m[1])?.[1]
     if (!href) continue
-    const url = unwrapRedirect(decodeEntities(href).trim())
+    const url = normalizeUrl(unwrapRedirect(decodeEntities(href)))
     if (!/^https?:\/\//i.test(url)) continue
     const anchorText = stripTags(m[2])
     const existing = byUrl.get(url)
