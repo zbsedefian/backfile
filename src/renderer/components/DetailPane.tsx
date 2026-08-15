@@ -206,7 +206,7 @@ export function DetailPane({
             })
           ) : (
             <span className="muted">
-              Not found in draft
+              N/A
             </span>
           )}
         </div>
