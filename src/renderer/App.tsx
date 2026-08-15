@@ -644,6 +644,16 @@ export function App(): JSX.Element {
     [selected, patchArticle]
   )
 
+  const editSourceTitle = useCallback(
+    async (url: string, title: string) => {
+      if (!selected) return
+      const next = selected.sources.map((l) => (l.url === url ? { ...l, title } : l))
+      patchArticle(selected.path, next)
+      await window.backfile.saveSources(selected.path, next)
+    },
+    [selected, patchArticle]
+  )
+
   const [recapturing, setRecapturing] = useState<string | null>(null)
 
   /** Discard a recorded capture and immediately redo it. */
@@ -1656,6 +1666,7 @@ export function App(): JSX.Element {
             onViewLocal={viewLocal}
             onRevealLocal={revealLocal}
             onEditUrl={editSourceUrl}
+            onEditTitle={editSourceTitle}
             onDelete={deleteSource}
             onRecapture={recapture}
             recapturing={recapturing}

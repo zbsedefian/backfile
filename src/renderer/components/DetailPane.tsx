@@ -16,6 +16,7 @@ interface Props {
   onViewLocal: (relativePath: string) => void
   onRevealLocal: (relativePath: string) => void
   onEditUrl: (oldUrl: string, newUrl: string) => void
+  onEditTitle: (url: string, title: string) => void
   onDelete: (url: string) => void
   /** Discard a recorded capture and run it again. */
   onRecapture: (url: string, service: ServiceId) => void
@@ -33,22 +34,27 @@ export function DetailPane({
   onViewLocal,
   onRevealLocal,
   onEditUrl,
+  onEditTitle,
   onDelete,
   onRecapture,
   recapturing
 }: Props): JSX.Element {
   const [editing, setEditing] = useState(false)
   const [draftUrl, setDraftUrl] = useState('')
+  const [draftTitle, setDraftTitle] = useState('')
   // Removal is one click next to several harmless ones, so it asks first.
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [screenshot, setScreenshot] = useState<string | null>(null)
 
   // Leave edit mode when the selection changes, so a half-typed URL is never
-  // applied to a different source than the one it was typed for.
+  // applied to a different source than the one it was typed for. Title synced
+  // the same way: only when the row itself changes, not on every re-render, so
+  // a background refresh can never interrupt someone mid-keystroke.
   useEffect(() => {
     setEditing(false)
     setConfirmingDelete(false)
     setDraftUrl(link?.url ?? '')
+    setDraftTitle(link?.title ?? '')
   }, [link?.url])
 
   // Read via IPC rather than a "file:" src: the renderer's CSP only allows
@@ -157,6 +163,26 @@ export function DetailPane({
           )}
         </div>
       )}
+
+      <div className="detail-block">
+        <div className="detail-label">Title</div>
+        <input
+          className="input"
+          value={draftTitle}
+          placeholder="e.g. an x.com post has no headline of its own to read back"
+          onChange={(e) => setDraftTitle(e.target.value)}
+          onBlur={() => {
+            if (draftTitle !== link.title) onEditTitle(link.url, draftTitle)
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+            if (e.key === 'Escape') {
+              setDraftTitle(link.title)
+              ;(e.target as HTMLInputElement).blur()
+            }
+          }}
+        />
+      </div>
 
       {link.anchorText && (
         <div className="detail-block">
