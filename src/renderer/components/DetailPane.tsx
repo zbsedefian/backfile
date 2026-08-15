@@ -206,7 +206,7 @@ export function DetailPane({
             })
           ) : (
             <span className="muted">
-              No longer in any draft — kept because the snapshot still matters.
+              Not found in draft
             </span>
           )}
         </div>
