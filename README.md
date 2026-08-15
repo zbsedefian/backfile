@@ -29,12 +29,10 @@ piece of journalism. For any project it will:
 
 ## sources.csv is the source of truth
 
-Backfile has no hidden database. Each project folder gets a `sources.csv`:
+Backfile's database is `sources.csv`, to be opened in Excel. Each project folder gets one.
 
 | status | title | url | anchor_text | archive_is | wayback | local_path | video_path | captured_at | found_in | article_source | excluded | excluded_reason | notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-
-It opens in Excel, diffs cleanly in git, and remains completely readable if you ever uninstall this app.
 
 ## Design decisions worth knowing
 
