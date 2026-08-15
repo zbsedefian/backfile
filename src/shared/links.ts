@@ -117,37 +117,6 @@ export function normalizeUrl(raw: string): string {
   return cleanTrackingParams(out)
 }
 
-/**
- * Hosts whose pages stream their media separately from the page itself.
- *
- * This matters because an MHTML capture of one of these preserves the title,
- * channel and description and a dead player — everything except the video,
- * which is usually the only part being cited. Flagging them is the difference
- * between a journalist knowing they still need the footage and believing they
- * already archived it.
- */
-const VIDEO_HOSTS = [
-  'youtube.com',
-  'youtu.be',
-  'vimeo.com',
-  'dailymotion.com',
-  'tiktok.com',
-  'rumble.com',
-  'odysee.com',
-  'twitch.tv',
-  'bitchute.com',
-  'streamable.com'
-]
-
-export function isLikelyVideoPage(url: string): boolean {
-  try {
-    const host = new URL(url).hostname.toLowerCase().replace(/^www\./, '')
-    return VIDEO_HOSTS.some((h) => host === h || host.endsWith(`.${h}`))
-  } catch {
-    return false
-  }
-}
-
 export interface ParsedPaste {
   /** The original source URL, when it could be determined. */
   url: string

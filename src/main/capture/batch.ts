@@ -99,6 +99,7 @@ export class BatchRunner {
     articlePath: string,
     links: SourceLink[],
     service: ServiceId,
+    cookiesBrowser: string | null,
     onProgress: (p: BatchProgress) => void
   ): Promise<BatchProgress> {
     const queue = BatchRunner.pending(links, service)
@@ -136,11 +137,19 @@ export class BatchRunner {
           ? await this.session.capture(url)
           : await adapterFor(service).capture(url, {
               articlePath,
-              signal: this.aborter.signal
+              signal: this.aborter.signal,
+              cookiesBrowser
             })
 
       if (result.ok && result.value) {
-        await recordCapture(articlePath, url, FIELD_FOR[service], result.value)
+        await recordCapture(
+          articlePath,
+          url,
+          FIELD_FOR[service],
+          result.value,
+          result.title,
+          result.screenshotPath
+        )
         succeeded++
         onProgress({
           service,

@@ -36,6 +36,22 @@ export function isSourceDocument(name: string): boolean {
   return isRealDocx(name) || isTextSource(name) || isHtmlSource(name) || isOdtSource(name)
 }
 
+/**
+ * Whether a picked file is directly inside an article's own folder.
+ *
+ * "Import a document" has no way to make Electron's own file picker refuse to
+ * browse elsewhere — `defaultPath` only starts it in the right place — so this
+ * is the actual lock. Every document name the rest of the app handles is a
+ * bare filename resolved against the article folder (link extraction, the
+ * rewriter, the capture archive); a file from anywhere else would silently
+ * break all of that, so it is rejected here instead. Deliberately not
+ * recursive: a subfolder like `images/` is not where a source document lives,
+ * matching how the folder is scanned in the first place.
+ */
+export function isInsideFolder(picked: string, folder: string): boolean {
+  return path.dirname(picked) === path.resolve(folder)
+}
+
 async function listDocuments(dir: string): Promise<string[]> {
   const entries = await fs.readdir(dir, { withFileTypes: true })
   return entries
@@ -67,6 +83,10 @@ async function toArticle(dir: string, name: string): Promise<Article | null> {
     name,
     path: dir,
     documents,
+    // Scanning reports every document as a candidate; which of them are really
+    // this journalist's drafts is a stored decision, applied by the settings
+    // layer in `resolveDrafts` before the renderer ever sees the article.
+    drafts: documents,
     hasSourcesFile,
     sources: hasSourcesFile ? await readSources(dir) : []
   }

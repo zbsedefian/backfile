@@ -8,6 +8,10 @@ interface Props {
   /** Services with a run already in flight; a second would collide with it. */
   running: ServiceId[]
   onRun: (service: ServiceId) => void
+  onInstallYtDlp: () => void
+  installingYtDlp: boolean
+  /** Bytes received so far, once a download is in progress. */
+  installProgress: { receivedBytes: number; totalBytes: number | null } | null
 }
 
 /**
@@ -22,12 +26,21 @@ interface Props {
  * position. Video is separated below a rule because it is the only action that
  * depends on software Backfile does not ship.
  */
+/** Human-readable byte count, coarse enough that a download's progress reads at a glance. */
+function formatBytes(n: number): string {
+  if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`
+}
+
 export function CaptureMenu({
   pending,
   videoAvailable,
   disabled,
   running,
-  onRun
+  onRun,
+  onInstallYtDlp,
+  installingYtDlp,
+  installProgress
 }: Props): JSX.Element {
   const [open, setOpen] = useState(false)
   const wrap = useRef<HTMLDivElement>(null)
@@ -95,42 +108,60 @@ export function CaptureMenu({
             'Runs in the pane below. Expect at most one CAPTCHA for the whole run.'
           )}
           {item(
-            'wayback',
-            'Wayback Machine',
-            pending.wayback,
-            'Submits each source to the Internet Archive.'
-          )}
-          {item(
             'local',
             'Local copies',
             pending.local,
             'Saves a self-contained MHTML file of each page into this article’s folder.'
           )}
+          {item(
+            'wayback',
+            'Wayback Machine',
+            pending.wayback,
+            'Submits each source to the Internet Archive.'
+          )}
 
           <div className="menu-rule" />
 
-          <button
-            className="menu-item"
-            disabled={pending.video === 0 || running.includes('video')}
-            onClick={() => choose('video')}
-            title={
-              videoAvailable === false
-                ? 'Needs yt-dlp. Install with: brew install yt-dlp'
-                : 'Downloads the actual video file. A local copy of a video page cannot capture the video itself.'
-            }
-          >
-            <span className="menu-item-label">
-              Videos
-              {videoAvailable === false && <span className="pill">needs yt-dlp</span>}
-            </span>
-            <span className={`menu-item-count${pending.video === 0 ? ' is-done' : ''}`}>
-              {running.includes('video')
-                ? 'running…'
-                : pending.video === 0
-                  ? 'none found'
-                  : `${pending.video} left`}
-            </span>
-          </button>
+          {videoAvailable === false ? (
+            // A dead-end tooltip ("install with brew") is no help to a
+            // journalist who has never opened a terminal — this fetches
+            // yt-dlp's own published binary directly, no package manager
+            // required, and stays disabled until the install actually lands
+            // so a slow connection cannot be double-clicked into two at once.
+            <button
+              className="menu-item"
+              disabled={installingYtDlp}
+              onClick={(e) => {
+                e.stopPropagation()
+                onInstallYtDlp()
+              }}
+              title="Downloads yt-dlp's own binary from github.com/yt-dlp/yt-dlp (about 20 MB) into Backfile's own folder — not a system-wide install, and nothing else changes."
+            >
+              <span className="menu-item-label">
+                Install yt-dlp
+                <span className="pill">needed for video</span>
+              </span>
+              <span className="menu-item-count">
+                {installingYtDlp
+                  ? installProgress
+                    ? `${formatBytes(installProgress.receivedBytes)}${
+                        installProgress.totalBytes
+                          ? ` / ${formatBytes(installProgress.totalBytes)}`
+                          : ''
+                      }`
+                    : 'starting…'
+                  : 'click to install'}
+              </span>
+            </button>
+          ) : (
+            item(
+              'video',
+              'Videos',
+              pending.video,
+              'Downloads the actual video file for each source that has one, via yt-dlp. ' +
+                'A local copy alone cannot capture it, since it streams separately from the page.'
+            )
+          )}
         </div>
       )}
     </div>

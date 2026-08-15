@@ -1,11 +1,18 @@
-import { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeTheme, shell } from 'electron'
 import { promises as fs } from 'node:fs'
 import fs_sync from 'node:fs'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { findYtDlp, resetYtDlpCache } from './capture/video'
+import { installYtDlp } from './capture/ytdlpInstall'
 import { Article, CaptureRequest, CaptureResult, ServiceId, SourceLink } from '../shared/types'
-import { reloadArticle, scanWorkspace } from './project/scan'
+import { isInsideFolder, reloadArticle, scanWorkspace } from './project/scan'
+import {
+  resolveDrafts,
+  setDrafts,
+  withResolution,
+  type DraftIndex
+} from './project/drafts'
 import { analyzeArticle, clearCapture, recordCapture } from './sources/analyze'
 import { readSources, writeSources } from './sources/csv'
 import {
@@ -33,6 +40,47 @@ interface Settings {
    * make — and one they should only have to make once.
    */
   hidden?: Record<string, string[]>
+  /**
+   * Which documents in each article folder are the journalist's own drafts,
+   * keyed by absolute folder path. See project/drafts.ts for what an absent
+   * entry means.
+   */
+  drafts?: DraftIndex
+  /**
+   * Which browser's login cookies yt-dlp may read to download a video that
+   * requires being signed in — an age-gated video, mainly. Off (undefined)
+   * by default: Backfile is otherwise account-free, and this is the one place
+   * that would read something from a real, logged-in browser session rather
+   * than act as a plain anonymous request. Opt-in, and global rather than
+   * per-article, since it is a statement about what the journalist's own
+   * machine is allowed to do, not about any one source.
+   */
+  videoCookiesBrowser?: string | null
+}
+
+/**
+ * Narrow each article's documents to the ones chosen as drafts, recording a
+ * first-sight decision for folders nobody has curated yet. Runs on every scan
+ * and reload so a folder is never analysed against a stale list.
+ */
+async function resolveArticleDrafts(articles: Article[]): Promise<Article[]> {
+  let resolved: Article[] = []
+  await updateSettings((settings) => {
+    let index = settings.drafts ?? {}
+    let changed = false
+
+    resolved = articles.map((article) => {
+      const { drafts, record } = resolveDrafts(article.path, article.documents, index)
+      if (record !== null) {
+        index = withResolution(index, article.path, record)
+        changed = true
+      }
+      return { ...article, drafts }
+    })
+
+    return changed ? { ...settings, drafts: index } : null
+  })
+  return resolved
 }
 
 async function readSettings(): Promise<Settings> {
@@ -44,7 +92,40 @@ async function readSettings(): Promise<Settings> {
 }
 
 async function writeSettings(settings: Settings): Promise<void> {
-  await fs.writeFile(SETTINGS_FILE(), JSON.stringify(settings, null, 2), 'utf8')
+  // Written to a sibling and renamed, so an interrupted write can never leave a
+  // half-file that parses as {} and silently forgets every decision in it.
+  const file = SETTINGS_FILE()
+  const temp = `${file}.tmp`
+  await fs.writeFile(temp, JSON.stringify(settings, null, 2), 'utf8')
+  await fs.rename(temp, file)
+}
+
+/**
+ * Read-modify-write the settings file, one caller at a time.
+ *
+ * Every writer here rewrites the whole file, and there are several: unticking a
+ * draft, hiding a folder, and the scan that adopts folders it has not seen
+ * before. That last one runs on a filesystem watcher, so it fires at moments
+ * nobody chose — including immediately after an analysis writes sources.csv.
+ * Unserialised, two of them overlapping means both read the same file and the
+ * slower write wins, quietly restoring a document the journalist just unticked.
+ * The queue makes each update see the previous one's result.
+ *
+ * The callback returns null to mean "nothing to change", which avoids rewriting
+ * the file on every scan of an unchanged workspace.
+ */
+let settingsQueue: Promise<unknown> = Promise.resolve()
+
+function updateSettings(change: (settings: Settings) => Settings | null): Promise<void> {
+  const next = settingsQueue.then(async () => {
+    const settings = await readSettings()
+    const updated = change(settings)
+    if (updated !== null) await writeSettings(updated)
+  })
+  // The queue must keep advancing even if one update throws, or every later
+  // write is dead behind it.
+  settingsQueue = next.catch(() => undefined)
+  return next
 }
 
 let mainWindow: BrowserWindow | null = null
@@ -102,7 +183,7 @@ function registerIpc(): void {
     })
     if (result.canceled || result.filePaths.length === 0) return null
     const root = result.filePaths[0]
-    await writeSettings({ ...(await readSettings()), lastWorkspace: root })
+    await updateSettings((settings) => ({ ...settings, lastWorkspace: root }))
     return root
   })
 
@@ -119,7 +200,7 @@ function registerIpc(): void {
   })
 
   ipcMain.handle('workspace:scan', async (_e, root: string): Promise<Article[]> => {
-    return scanWorkspace(root)
+    return resolveArticleDrafts(await scanWorkspace(root))
   })
 
   /**
@@ -166,17 +247,65 @@ function registerIpc(): void {
   ipcMain.handle(
     'workspace:setHidden',
     async (_e, root: string, names: string[]): Promise<void> => {
-      const settings = await readSettings()
-      await writeSettings({
+      await updateSettings((settings) => ({
         ...settings,
         hidden: { ...(settings.hidden ?? {}), [root]: names }
-      })
+      }))
     }
   )
 
   ipcMain.handle('article:reload', async (_e, articlePath: string): Promise<Article | null> => {
-    return reloadArticle(articlePath)
+    const article = await reloadArticle(articlePath)
+    if (!article) return null
+    return (await resolveArticleDrafts([article]))[0]
   })
+
+  ipcMain.handle(
+    'article:setDrafts',
+    async (_e, articlePath: string, documents: string[], chosen: string[]): Promise<void> => {
+      await updateSettings((settings) => ({
+        ...settings,
+        drafts: setDrafts(settings.drafts ?? {}, articlePath, documents, chosen)
+      }))
+    }
+  )
+
+  /**
+   * Choose a document to import, from inside the article's own folder only.
+   *
+   * Electron's open dialog has no way to actually confine the browser to a
+   * directory — `defaultPath` only starts it there, the journalist can still
+   * navigate anywhere on disk. So the lock is enforced here instead: every
+   * document a folder holds is treated as a bare filename relative to that
+   * folder everywhere else in the app (link extraction, the rewriter, the
+   * capture archive), and a path from outside it would silently break all of
+   * that rather than fail loudly, which is worse.
+   */
+  ipcMain.handle(
+    'article:pickDocument',
+    async (_e, articlePath: string): Promise<string> => {
+      const result = await dialog.showOpenDialog({
+        title: 'Import a document',
+        message: "Choose a document already in this article's own folder.",
+        buttonLabel: 'Import',
+        defaultPath: articlePath,
+        properties: ['openFile'],
+        filters: [
+          {
+            name: 'Documents',
+            extensions: ['docx', 'odt', 'html', 'htm', 'xhtml', 'txt', 'md', 'markdown']
+          }
+        ]
+      })
+      if (result.canceled || result.filePaths.length === 0) return ''
+
+      const picked = result.filePaths[0]
+      if (!isInsideFolder(picked, articlePath)) {
+        throw new Error("Choose a file inside this article's own folder, not somewhere else.")
+      }
+      return path.basename(picked)
+    }
+  )
 
   ipcMain.handle(
     'article:analyze',
@@ -237,9 +366,20 @@ function registerIpc(): void {
 
   ipcMain.handle('capture:run', async (_e, req: CaptureRequest): Promise<CaptureResult> => {
     const adapter = adapterFor(req.service)
-    const result = await adapter.capture(req.url, { articlePath: req.articlePath })
+    const { videoCookiesBrowser } = await readSettings()
+    const result = await adapter.capture(req.url, {
+      articlePath: req.articlePath,
+      cookiesBrowser: videoCookiesBrowser
+    })
     if (result.ok && result.value) {
-      await recordCapture(req.articlePath, req.url, FIELD_FOR[req.service], result.value)
+      await recordCapture(
+        req.articlePath,
+        req.url,
+        FIELD_FOR[req.service],
+        result.value,
+        result.title,
+        result.screenshotPath
+      )
     }
     return result
   })
@@ -257,15 +397,28 @@ function registerIpc(): void {
 
   ipcMain.handle(
     'capture:batch',
-    async (event, articlePath: string, service: ServiceId): Promise<void> => {
+    async (
+      event,
+      articlePath: string,
+      service: ServiceId,
+      urls?: string[]
+    ): Promise<void> => {
       if (activeBatches.has(service)) {
         throw new Error(`a ${service} run is already in progress`)
       }
       const runner = new BatchRunner()
       activeBatches.set(service, runner)
       try {
-        const links = await readSources(articlePath)
-        await runner.run(articlePath, links, service, (progress) => {
+        const all = await readSources(articlePath)
+        // A selection narrows the queue; everything else about the run — the
+        // pacing, the single archive.is session, cancellation — is unchanged.
+        // An empty list means "capture nothing", not "capture everything" —
+        // the difference matters when every source in a folder belongs to a
+        // document the journalist has just unticked.
+        const wanted = urls ? new Set(urls) : null
+        const links = wanted ? all.filter((l) => wanted.has(l.url)) : all
+        const { videoCookiesBrowser } = await readSettings()
+        await runner.run(articlePath, links, service, videoCookiesBrowser ?? null, (progress) => {
           if (!event.sender.isDestroyed()) event.sender.send('capture:progress', progress)
         })
       } finally {
@@ -282,6 +435,13 @@ function registerIpc(): void {
   ipcMain.handle('capture:skip', async (_e, service?: ServiceId): Promise<void> => {
     if (service) activeBatches.get(service)?.skip()
     else for (const runner of activeBatches.values()) runner.skip()
+  })
+
+  // Routed through main rather than the renderer's own navigator.clipboard so
+  // it behaves the same regardless of whether the page is loaded from file://
+  // (production) or a dev server URL.
+  ipcMain.handle('clipboard:writeText', async (_e, text: string): Promise<void> => {
+    clipboard.writeText(text)
   })
 
   ipcMain.handle('shell:openExternal', async (_e, url: string): Promise<void> => {
@@ -338,10 +498,63 @@ function registerIpc(): void {
     }
   )
 
+  /**
+   * A screenshot as a data URL, for the detail pane's thumbnail.
+   *
+   * The renderer's CSP allows "data:" images but not "file:" — the whole
+   * point of running captured content through a sandboxed, contextIsolated
+   * window in the first place — so the main process reads the PNG and hands
+   * back bytes rather than a path the renderer could load itself.
+   */
+  ipcMain.handle(
+    'capture:readScreenshot',
+    async (_e, articlePath: string, relativePath: string): Promise<string | null> => {
+      const full = path.resolve(articlePath, relativePath)
+      if (!full.startsWith(path.resolve(articlePath))) return null
+      try {
+        const buffer = await fs.readFile(full)
+        return `data:image/png;base64,${buffer.toString('base64')}`
+      } catch {
+        return null
+      }
+    }
+  )
+
   ipcMain.handle('video:available', async (): Promise<boolean> => {
     resetYtDlpCache()
     return (await findYtDlp()) !== null
   })
+
+  ipcMain.handle('video:cookiesBrowser', async (): Promise<string | null> => {
+    const { videoCookiesBrowser } = await readSettings()
+    return videoCookiesBrowser ?? null
+  })
+
+  ipcMain.handle(
+    'video:setCookiesBrowser',
+    async (_e, browser: string | null): Promise<void> => {
+      await updateSettings((settings) => ({ ...settings, videoCookiesBrowser: browser }))
+      // The Video Cookies submenu shows the active choice as a radio dot, and
+      // Electron menus are static once set — rebuilding is how the dot moves.
+      buildMenu(browser)
+    }
+  )
+
+  ipcMain.handle(
+    'video:install',
+    async (event): Promise<{ ok: true; path: string } | { ok: false; error: string }> => {
+      try {
+        const installedPath = await installYtDlp((p) => {
+          if (!event.sender.isDestroyed()) event.sender.send('video:installProgress', p)
+        })
+        resetYtDlpCache()
+        return { ok: true, path: installedPath }
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) }
+      }
+    }
+  )
+
   ipcMain.handle('browser:setBounds', async (_e, bounds: Bounds): Promise<void> => {
     browserPane.setBounds(bounds)
   })
@@ -397,9 +610,12 @@ function registerIpc(): void {
   })
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   registerIpc()
-  buildMenu()
+  // The menu shows the stored Video Cookies choice, so it needs the settings
+  // before it is built the first time.
+  const { videoCookiesBrowser } = await readSettings()
+  buildMenu(videoCookiesBrowser ?? null)
   createWindow()
 
   app.on('activate', () => {

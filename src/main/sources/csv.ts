@@ -17,14 +17,17 @@ export const SOURCES_FILENAME = 'sources.csv'
 /** Column order is chosen for a human opening this in Excel: status first. */
 const COLUMNS = [
   'status',
+  'title',
   'url',
   'anchor_text',
   'archive_is',
   'wayback',
   'local_path',
   'video_path',
+  'screenshot_path',
   'captured_at',
   'found_in',
+  'article_source',
   'excluded',
   'excluded_reason',
   'notes'
@@ -96,14 +99,17 @@ export function serializeCsv(links: SourceLink[]): string {
   for (const link of links) {
     const record: Record<(typeof COLUMNS)[number], string> = {
       status: TIER_LABEL[tierOf(link)] ?? '',
+      title: link.title,
       url: link.url,
       anchor_text: link.anchorText,
       archive_is: link.archiveIs,
       wayback: link.wayback,
       local_path: link.localPath,
       video_path: link.videoPath,
+      screenshot_path: link.screenshotPath,
       captured_at: link.capturedAt,
       found_in: link.foundIn.join('; '),
+      article_source: link.articleSource.join('; '),
       excluded: link.excluded ? 'yes' : '',
       excluded_reason: link.excludedReason,
       notes: link.notes
@@ -131,8 +137,13 @@ export function rowsToLinks(rows: string[][]): SourceLink[] {
     if (!url) continue
     links.push({
       url,
+      title: at(row, 'title'),
       anchorText: at(row, 'anchor_text'),
       foundIn: at(row, 'found_in')
+        .split(';')
+        .map((s) => s.trim())
+        .filter(Boolean),
+      articleSource: at(row, 'article_source')
         .split(';')
         .map((s) => s.trim())
         .filter(Boolean),
@@ -140,6 +151,7 @@ export function rowsToLinks(rows: string[][]): SourceLink[] {
       wayback: at(row, 'wayback'),
       localPath: at(row, 'local_path'),
       videoPath: at(row, 'video_path'),
+      screenshotPath: at(row, 'screenshot_path'),
       capturedAt: at(row, 'captured_at'),
       notes: at(row, 'notes'),
       excluded: /^(yes|true|1)$/i.test(at(row, 'excluded')),

@@ -7,11 +7,14 @@ function link(over: Partial<SourceLink> = {}): SourceLink {
   return {
     url: 'https://example.com/a',
     anchorText: '',
+    title: '',
     foundIn: [],
+    articleSource: [],
     archiveIs: '',
     wayback: '',
     localPath: '',
     videoPath: '',
+    screenshotPath: '',
     capturedAt: '',
     notes: '',
     excluded: false,
@@ -53,7 +56,8 @@ test('round-trips a link whose fields contain commas, quotes and newlines', () =
     url: 'https://example.com/a?x=1,2',
     anchorText: 'he said "look"',
     notes: 'line1\nline2',
-    foundIn: ['draft one.docx', 'draft two.docx']
+    foundIn: ['draft one.docx', 'draft two.docx'],
+    articleSource: ['draft one.docx', 'draft two.docx']
   })
   const back = rowsToLinks(parseCsv(serializeCsv([original])))
   assert.equal(back.length, 1)

@@ -1,6 +1,14 @@
+import { useMemo, useState } from 'react'
 import type { ServiceId, SourceLink } from '../../shared/types'
 import { tierOf } from '../../shared/types'
+import type { ClickModifiers } from '../../shared/selection'
 import { TierBadge } from './Tier'
+import { ResizeHandle } from './ResizeHandle'
+
+const COL_TIER_WIDTH = 30
+const COL_SVC_WIDTH = 92
+/** archive.is, local, wayback, video, captured. */
+const SERVICE_COLUMN_COUNT = 5
 
 export type SortKey = 'tier' | 'source' | 'captured'
 export interface Sort {
@@ -44,7 +52,7 @@ export function filterLinks(links: SourceLink[], query: string): SourceLink[] {
   const q = query.trim().toLowerCase()
   if (!q) return links
   return links.filter((l) =>
-    [l.url, l.anchorText, l.notes, l.foundIn.join(' ')].some((field) =>
+    [l.url, l.title, l.anchorText, l.notes, l.foundIn.join(' ')].some((field) =>
       field.toLowerCase().includes(q)
     )
   )
@@ -52,18 +60,35 @@ export function filterLinks(links: SourceLink[], query: string): SourceLink[] {
 
 interface Props {
   links: SourceLink[]
-  selectedUrl: string | null
+  /** Every selected row. Usually one; more after a cmd- or shift-click. */
+  selectedUrls: string[]
+  /** The one row the detail pane follows. */
+  focusedUrl: string | null
   busy: Record<string, boolean>
-  onSelect: (url: string) => void
+  onSelect: (url: string, mods: ClickModifiers) => void
   onCapture: (url: string, service: ServiceId) => void
   onOpen: (url: string) => void
   /** Finished snapshots open in the real browser, not the embedded pane. */
   onOpenExternal: (url: string) => void
+  /** A local MHTML capture opens in Backfile's own pane — see ServiceCell. */
+  onViewLocal: (relativePath: string) => void
+  /** A downloaded video opens with whatever the OS plays media files with. */
   onOpenLocal: (relativePath: string) => void
   sort: Sort
   onSortChange: (sort: Sort) => void
   /** Non-empty when a search is filtering the list, for a truthful empty state. */
   query: string
+  /** Overrides the default no-sources copy when the caller knows a better reason. */
+  emptyHint?: string
+  /**
+   * Width of the Source column in pixels. The table uses a fixed layout so
+   * this is authoritative — without it, a single long anchor-text quote or URL
+   * forces the whole table wider than the window, pushing the capture buttons
+   * out past the right edge until the window is maximised or the list scrolled
+   * sideways to reach them.
+   */
+  sourceColWidth: number
+  onSourceColWidthChange: (width: number) => void
 }
 
 export function busyKey(url: string, service: ServiceId): string {
@@ -83,17 +108,25 @@ function displayUrl(url: string): { host: string; rest: string } {
 
 export function SourceTable({
   links,
-  selectedUrl,
+  selectedUrls,
+  focusedUrl,
   busy,
   onSelect,
   onCapture,
   onOpen,
   onOpenExternal,
+  onViewLocal,
   onOpenLocal,
   sort,
   onSortChange,
-  query
+  query,
+  emptyHint,
+  sourceColWidth,
+  onSourceColWidthChange
 }: Props): JSX.Element {
+  const selectedSet = useMemo(() => new Set(selectedUrls), [selectedUrls])
+  const tableWidth = COL_TIER_WIDTH + sourceColWidth + SERVICE_COLUMN_COUNT * COL_SVC_WIDTH
+
   const toggleSort = (key: SortKey): void => {
     onSortChange(
       sort.key === key ? { key, dir: sort.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' }
@@ -110,11 +143,17 @@ export function SourceTable({
             <p>Nothing matches “{query}”.</p>
             <p className="muted">Clear the search to see every source again.</p>
           </>
+        ) : emptyHint ? (
+          // The list can be empty for reasons the default copy would get
+          // wrong — a sources.csv full of rows hidden because no document is
+          // imported yet, say. The caller knows why; let it say so.
+          <p className="muted">{emptyHint}</p>
         ) : (
           <>
             <p>No sources recorded yet.</p>
             <p className="muted">
-              Run “Analyze links” to pull every URL out of this article’s drafts and link lists.
+              Press “Add article” to import a document and read every URL it cites, or “+ Add
+              link” to record one by hand.
             </p>
           </>
         )}
@@ -124,19 +163,52 @@ export function SourceTable({
 
   return (
     <div className="table-wrap">
-      <table className="source-table">
+      <table className="source-table" style={{ width: tableWidth }}>
+        <colgroup>
+          <col className="col-tier" />
+          <col style={{ width: sourceColWidth }} />
+          <col className="col-svc" />
+          <col className="col-svc" />
+          <col className="col-svc" />
+          <col className="col-svc" />
+          <col className="col-svc" />
+        </colgroup>
         <thead>
           <tr>
             <th className="col-tier sortable" onClick={() => toggleSort('tier')} title="Sort by archival status">
               ★{caret('tier')}
             </th>
-            <th className="col-url sortable" onClick={() => toggleSort('source')}>
+            <th className="col-url col-url-head sortable" onClick={() => toggleSort('source')}>
               Source{caret('source')}
+              <div
+                className="col-resize-handle"
+                // Stops a drag (or even a plain click) on the handle from also
+                // toggling the sort, since both live on the same header cell.
+                onClick={(e) => e.stopPropagation()}
+              >
+                <ResizeHandle
+                  orientation="vertical"
+                  onDelta={(delta) => onSourceColWidthChange(sourceColWidth + delta)}
+                  title="Drag to resize the Source column"
+                />
+              </div>
             </th>
-            <th className="col-svc">archive.is</th>
-            <th className="col-svc">Wayback</th>
-            <th className="col-svc">Local</th>
-            <th className="col-svc sortable" onClick={() => toggleSort('captured')}>
+            <th className="col-svc" title="archive.is — an on-demand snapshot service; usually the single most useful archive for a citation">
+              archive.is
+            </th>
+            {/* Local before Wayback: a self-contained file on disk is the
+                second most valuable thing to have, ahead of a submission to a
+                service this app does not control. */}
+            <th className="col-svc" title="A self-contained copy of the page saved onto this computer, inside this article's own folder">
+              Local
+            </th>
+            <th className="col-svc" title="The Wayback Machine, run by the Internet Archive — a second, independent backup of the page">
+              Wayback
+            </th>
+            <th className="col-svc" title="The actual video file, downloaded via yt-dlp if the source has one — a local copy alone only saves the page around it, not the video itself">
+              Video
+            </th>
+            <th className="col-svc sortable" onClick={() => toggleSort('captured')} title="When this source was last archived by any of the services above — sort by it">
               Captured{caret('captured')}
             </th>
           </tr>
@@ -144,13 +216,21 @@ export function SourceTable({
         <tbody>
           {links.map((link) => {
             const { host, rest } = displayUrl(link.url)
-            const selected = selectedUrl === link.url
+            const selected = selectedSet.has(link.url)
+            const focused = focusedUrl === link.url
             return (
               <tr
                 key={link.url}
                 data-url={link.url}
-                className={selected ? 'is-selected' : ''}
-                onClick={() => onSelect(link.url)}
+                className={`${selected ? 'is-selected' : ''}${focused ? ' is-focused' : ''}`}
+                // Shift-clicking a range would otherwise leave the browser's own
+                // blue text selection smeared across every row it crossed.
+                onMouseDown={(e) => {
+                  if (e.shiftKey) e.preventDefault()
+                }}
+                onClick={(e) =>
+                  onSelect(link.url, { toggle: e.metaKey || e.ctrlKey, range: e.shiftKey })
+                }
               >
                 <td className="col-tier">
                   <TierBadge link={link} />
@@ -167,7 +247,15 @@ export function SourceTable({
                     >
                       {host}
                     </button>
+                    {/* The headline is what identifies a citation at a glance;
+                        the bare path rarely says anything at all. */}
+                    {link.title && (
+                      <span className="url-title" title={link.title}>
+                        {link.title}
+                      </span>
+                    )}
                     {link.excluded && <span className="pill">excluded</span>}
+                    <CopyLinkButton url={link.url} />
                   </div>
                   <div className="url-rest" title={link.url}>
                     {link.anchorText ? `“${link.anchorText}” · ` : ''}
@@ -187,6 +275,19 @@ export function SourceTable({
                 />
                 <ServiceCell
                   link={link}
+                  service="local"
+                  value={link.localPath}
+                  busy={busy[busyKey(link.url, 'local')]}
+                  onCapture={onCapture}
+                  onOpen={onOpen}
+                  onOpenExternal={onOpenExternal}
+                  onViewLocal={onViewLocal}
+                  actionLabel="Download"
+                  isFile
+                  viewInPane
+                />
+                <ServiceCell
+                  link={link}
                   service="wayback"
                   value={link.wayback}
                   busy={busy[busyKey(link.url, 'wayback')]}
@@ -197,13 +298,13 @@ export function SourceTable({
                 />
                 <ServiceCell
                   link={link}
-                  service="local"
-                  value={link.localPath}
-                  busy={busy[busyKey(link.url, 'local')]}
+                  service="video"
+                  value={link.videoPath}
+                  busy={busy[busyKey(link.url, 'video')]}
                   onCapture={onCapture}
                   onOpen={onOpen}
                   onOpenExternal={onOpenExternal}
-                  onOpenLocal={onOpenLocal}
+                  onViewLocal={onOpenLocal}
                   actionLabel="Download"
                   isFile
                 />
@@ -227,11 +328,24 @@ interface CellProps {
   value: string
   busy?: boolean
   actionLabel: string
+  /** The value is a file path relative to the article folder, not a URL. */
   isFile?: boolean
+  /**
+   * Only meaningful when isFile is set. A local MHTML capture opens in
+   * Backfile's own pane — Chromium reads MHTML natively, and the OS handoff
+   * that every other file goes through sometimes lands on Word, which cannot
+   * open a Chromium MHTML's stylesheet parts and fails with a wall of
+   * unreadable "Missing file: cid:css-…" errors. A video file has no such
+   * trap, so it takes the ordinary OS handoff instead.
+   */
+  viewInPane?: boolean
+  /** True when this service does not apply to this row at all, rather than
+   *  merely "not captured yet". */
+  notApplicable?: boolean
   onCapture: (url: string, service: ServiceId) => void
   onOpen: (url: string) => void
   onOpenExternal: (url: string) => void
-  onOpenLocal?: (relativePath: string) => void
+  onViewLocal?: (relativePath: string) => void
 }
 
 function ServiceCell({
@@ -241,11 +355,13 @@ function ServiceCell({
   busy,
   actionLabel,
   isFile,
+  viewInPane,
+  notApplicable,
   onCapture,
   onOpenExternal,
-  onOpenLocal
+  onViewLocal
 }: CellProps): JSX.Element {
-  if (link.excluded) {
+  if (link.excluded || notApplicable) {
     return (
       <td className="col-svc">
         <span className="muted small">n/a</span>
@@ -258,13 +374,10 @@ function ServiceCell({
         <span className="chip-pair">
           <button
             className="chip chip-done"
-            title={isFile ? `Open ${value}` : `Open ${value} in your browser`}
+            title={isFile ? `${viewInPane ? 'View' : 'Open'} ${value}` : `Open ${value} in your browser`}
             onClick={(e) => {
               e.stopPropagation()
-              // A local capture is a file path, so it is opened by the OS. A
-              // finished snapshot opens in the real browser rather than the
-              // embedded pane — it is a result to read, not a page to work in.
-              if (isFile) onOpenLocal?.(value)
+              if (isFile) onViewLocal?.(value)
               else onOpenExternal(value)
             }}
           >
@@ -300,5 +413,31 @@ function ServiceCell({
         {busy ? '…' : actionLabel}
       </button>
     </td>
+  )
+}
+
+const COPIED_FLASH_MS = 1300
+
+/**
+ * Copies the full URL, not the trimmed host shown in the row — the truncated
+ * display is for scanning the list, and pasting a shortened link elsewhere
+ * would send someone to the wrong page.
+ */
+function CopyLinkButton({ url }: { url: string }): JSX.Element {
+  const [copied, setCopied] = useState(false)
+
+  return (
+    <button
+      className={`copy-link${copied ? ' is-copied' : ''}`}
+      title={copied ? 'Copied' : `Copy ${url}`}
+      onClick={(e) => {
+        e.stopPropagation()
+        void window.backfile.copyText(url)
+        setCopied(true)
+        setTimeout(() => setCopied(false), COPIED_FLASH_MS)
+      }}
+    >
+      {copied ? '✓' : '⧉'}
+    </button>
   )
 }

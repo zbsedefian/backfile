@@ -29,6 +29,12 @@ const api = {
   lastWorkspace: (): Promise<string | null> => ipcRenderer.invoke('workspace:last'),
   scanWorkspace: (root: string): Promise<Article[]> => ipcRenderer.invoke('workspace:scan', root),
   hiddenArticles: (root: string): Promise<string[]> => ipcRenderer.invoke('workspace:hidden', root),
+  /** Record which of a folder's documents count as the journalist's drafts. */
+  setDrafts: (articlePath: string, documents: string[], chosen: string[]): Promise<void> =>
+    ipcRenderer.invoke('article:setDrafts', articlePath, documents, chosen),
+  /** Empty string means cancelled; a rejection means the pick was outside the folder. */
+  pickDocument: (articlePath: string): Promise<string> =>
+    ipcRenderer.invoke('article:pickDocument', articlePath),
   watchWorkspace: (root: string): Promise<void> => ipcRenderer.invoke('workspace:watch', root),
   onWorkspaceChanged: (handler: () => void): (() => void) => {
     const listener = (): void => handler()
@@ -61,8 +67,12 @@ const api = {
   capture: (req: CaptureRequest): Promise<CaptureResult> => ipcRenderer.invoke('capture:run', req),
   clearCapture: (articlePath: string, url: string, service: ServiceId): Promise<SourceLink[]> =>
     ipcRenderer.invoke('capture:clear', articlePath, url, service),
-  captureAll: (articlePath: string, service: ServiceId): Promise<void> =>
-    ipcRenderer.invoke('capture:batch', articlePath, service),
+  /** A screenshot's bytes as a data URL, or null if it can no longer be read. */
+  readScreenshot: (articlePath: string, relativePath: string): Promise<string | null> =>
+    ipcRenderer.invoke('capture:readScreenshot', articlePath, relativePath),
+  /** `urls` narrows the run to a selection; omitted, it covers the article. */
+  captureAll: (articlePath: string, service: ServiceId, urls?: string[]): Promise<void> =>
+    ipcRenderer.invoke('capture:batch', articlePath, service, urls),
   /** Omit the service to stop everything currently running. */
   cancelCapture: (service?: ServiceId): Promise<void> =>
     ipcRenderer.invoke('capture:cancel', service),
@@ -74,6 +84,7 @@ const api = {
     ipcRenderer.on('capture:progress', listener)
     return () => ipcRenderer.removeListener('capture:progress', listener)
   },
+  copyText: (text: string): Promise<void> => ipcRenderer.invoke('clipboard:writeText', text),
   openExternal: (url: string): Promise<void> => ipcRenderer.invoke('shell:openExternal', url),
   openCapture: (articlePath: string, relativePath: string): Promise<void> =>
     ipcRenderer.invoke('shell:openCapture', articlePath, relativePath),
@@ -87,6 +98,21 @@ const api = {
   viewCapture: (articlePath: string, relativePath: string): Promise<string | null> =>
     ipcRenderer.invoke('browser:openCapture', articlePath, relativePath),
   videoAvailable: (): Promise<boolean> => ipcRenderer.invoke('video:available'),
+  /** Which browser's login cookies yt-dlp may use for a sign-in-required video, or null. */
+  videoCookiesBrowser: (): Promise<string | null> => ipcRenderer.invoke('video:cookiesBrowser'),
+  setVideoCookiesBrowser: (browser: string | null): Promise<void> =>
+    ipcRenderer.invoke('video:setCookiesBrowser', browser),
+  /** Downloads yt-dlp's own binary from GitHub into Backfile's own folder. */
+  installYtDlp: (): Promise<{ ok: true; path: string } | { ok: false; error: string }> =>
+    ipcRenderer.invoke('video:install'),
+  onYtDlpInstallProgress: (
+    handler: (p: { receivedBytes: number; totalBytes: number | null }) => void
+  ): (() => void) => {
+    const listener = (_e: unknown, p: { receivedBytes: number; totalBytes: number | null }): void =>
+      handler(p)
+    ipcRenderer.on('video:installProgress', listener)
+    return () => ipcRenderer.removeListener('video:installProgress', listener)
+  },
   browserSetBounds: (bounds: Bounds): Promise<void> =>
     ipcRenderer.invoke('browser:setBounds', bounds),
   browserActivate: (id: string): Promise<void> => ipcRenderer.invoke('browser:activate', id),

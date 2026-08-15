@@ -180,6 +180,18 @@ body {
   border-color: var(--border);
 }
 
+/* Sized to match the toolbar's own .btn row height, with a hover state —
+   .icon-toggle alone has neither, having only ever been used standalone. */
+.toolbar-icon {
+  padding: 5px 8px;
+  font-size: 13px;
+}
+
+.toolbar-icon:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
 .sidebar,
 .detail {
   background: var(--bg-panel);
@@ -300,27 +312,49 @@ body {
 
 /* ---------- main ---------- */
 
+/*
+ * Two rows, not one crowded one. The top row is decisions made once in a
+ * while about the article itself (title, which documents are drafts, running
+ * analysis); the bottom row is for working through the sources that decision
+ * produced (filtering, searching). Keeping them apart is the point — mixing
+ * "what counts as this article" in with "capture this source" is what made a
+ * single toolbar row read as a wall of unrelated buttons.
+ *
+ * Neither row pins anything to the window's far edge. Content follows the
+ * title/search box it belongs to instead — spread apart, the wider the window
+ * got the further a button travelled from the thing it acts on.
+ */
 .main-head {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 16px 18px 12px;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 18px 12px;
   border-bottom: 1px solid var(--border);
   flex: none;
+}
+
+.main-head-top,
+.main-head-bottom {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+}
+
+.main-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* Right-justified, at the requester's explicit direction — this row now
+     holds exactly the title and one button, not the multi-button crowd that
+     made pinning things to the far edge a problem elsewhere in the toolbar. */
+  margin-left: auto;
 }
 
 .article-title {
   font-size: 16px;
   font-weight: 600;
-  margin: 0 0 6px;
-}
-
-.counts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  font-size: 11.5px;
+  margin: 0;
 }
 
 .count-gold {
@@ -336,8 +370,18 @@ body {
   color: var(--text-faint);
 }
 
+/* The export preview's own repointed/unarchived summary — plain text, not the
+   filter bar below, which only shares the tier-color modifiers above. */
+.counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 11.5px;
+}
+
 .filters {
   display: flex;
+  flex-wrap: wrap;
   gap: 2px;
   background: var(--bg);
   border: 1px solid var(--border);
@@ -353,13 +397,40 @@ body {
   padding: 4px 10px;
   font: inherit;
   font-size: 11.5px;
-  text-transform: capitalize;
   cursor: pointer;
 }
 
 .tab.is-active {
   background: var(--bg-raised);
   color: var(--text);
+}
+
+/*
+ * The tier counts are the filter, not a caption next to one. They used to be
+ * plain text sitting directly above a separate row of tabs doing the same
+ * job — same shape, same position, so clicking a count (the obvious thing to
+ * try) did nothing while the tabs underneath it did. There is one control now.
+ *
+ * A distinct class from .count/.counts above: those style the export preview's
+ * plain, non-interactive summary text, and giving that a button's cursor and
+ * hover chrome for no reason would be its own small bug.
+ */
+.count-btn {
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  padding: 4px 10px;
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.count-btn.is-active {
+  background: var(--bg-raised);
+}
+
+.count-btn:not(.is-active):hover {
+  background: var(--bg-hover);
 }
 
 /* ---------- inputs ---------- */
@@ -389,7 +460,7 @@ body {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
-  justify-content: flex-end;
+  justify-content: flex-start;
 }
 
 .sidebar-search {
@@ -478,10 +549,11 @@ body {
   flex: none;
 }
 
-.toolbar-sep {
-  flex: 1;
-  min-width: 0;
-}
+/*
+ * Nothing in the toolbar is pushed to the far edge any more. On a wide window a
+ * flex spacer put Publish most of a metre from the article title it belongs to,
+ * which meant maximising the window just to reach a button.
+ */
 
 .toolbar-divider {
   width: 1px;
@@ -545,12 +617,6 @@ body {
 
 .btn-grouped:disabled .btn-count {
   display: none;
-}
-
-.publish-group {
-  display: flex;
-  align-items: center;
-  gap: 6px;
 }
 
 .select {
@@ -674,9 +740,29 @@ body {
   min-height: 0;
 }
 
+/*
+ * Fixed layout, with a <colgroup> giving every column an explicit width. Under
+ * the default "auto" layout, a long anchor-text quote or URL — nowrap and
+ * ellipsised, but still measured at full length for the browser's own column
+ * sizing — could force the Source column, and the whole table with it, wider
+ * than the window. That pushed the capture buttons off the right edge until
+ * the window was maximised or the table scrolled sideways to reach them. Fixed
+ * layout makes the widths in the colgroup authoritative instead.
+ */
+/*
+ * Width is set inline in JS to the exact sum of the declared columns, not
+ * "100%". With table-layout:fixed, a table stretched to 100% of a container
+ * wider than its declared columns does not just leave the gap empty — Chromium
+ * distributes that leftover proportionally across every column, including the
+ * ones with an explicit pixel width. Dragging the Source column resize handle
+ * changes how much leftover there is to redistribute on every pixel of
+ * movement, which is what made the archive.is/local/wayback/video columns
+ * visibly stretch and shrink during the drag instead of holding still. An
+ * exact width leaves nothing for the browser to redistribute.
+ */
 .source-table {
-  width: 100%;
   border-collapse: collapse;
+  table-layout: fixed;
 }
 
 .source-table th {
@@ -712,6 +798,12 @@ body {
   background: var(--bg-raised);
 }
 
+/* Within a multi-row selection, one row is still the one the detail pane and
+   the single-row shortcuts follow. Without this they are indistinguishable. */
+.source-table tbody tr.is-focused td:first-child {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
 .col-tier {
   width: 30px;
   text-align: center;
@@ -721,11 +813,44 @@ body {
   width: 92px;
 }
 
+.col-url-head {
+  position: relative;
+}
+
+/* Widened past the visible divider so the drag target is not a 1px hairline. */
+.col-resize-handle {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  width: 9px;
+  height: 100%;
+  cursor: col-resize;
+}
+
+.col-resize-handle .resize-handle {
+  height: 100%;
+}
+
 .url-host {
   display: flex;
   align-items: center;
   gap: 6px;
   font-weight: 500;
+}
+
+/*
+ * The headline carries the meaning, so it gets the room; the host beside it is
+ * only there to say who published it. Truncated rather than wrapped, to keep
+ * every row the same height in a list scanned by eye.
+ */
+.url-title {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 400;
+  color: var(--text-dim);
 }
 
 .url-rest {
@@ -735,6 +860,43 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/*
+ * Muted until the row is worth acting on, so a scanned list of forty rows does
+ * not read as forty identical icons. Always in the DOM rather than shown only
+ * on hover — a hover-only control is invisible to anyone using a keyboard, and
+ * "always there, quiet until relevant" costs nothing at this size.
+ */
+.copy-link {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.55;
+}
+
+.source-table tbody tr:hover .copy-link,
+.copy-link:hover,
+.copy-link:focus-visible,
+.copy-link.is-copied {
+  opacity: 1;
+}
+
+.copy-link:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.copy-link.is-copied {
+  color: var(--ok);
 }
 
 /* ---------- bits ---------- */
@@ -890,6 +1052,13 @@ body {
   cursor: pointer;
 }
 
+.screenshot-thumb {
+  display: block;
+  width: 100%;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+}
+
 /* ---------- misc ---------- */
 
 .empty-state {
@@ -961,8 +1130,7 @@ body {
   height: 26px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
   padding: 0 12px;
   background: var(--bg-panel);
   border-top: 1px solid var(--border);
@@ -973,6 +1141,25 @@ body {
 
 .statusbar-hint {
   flex: none;
+  /* Pushed to the far right regardless of how many badges sit before it —
+     status and the failure count read as one group on the left. */
+  margin-left: auto;
+}
+
+.failure-badge {
+  flex: none;
+  background: color-mix(in srgb, var(--danger) 15%, transparent);
+  color: var(--danger);
+  border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 9px;
+  cursor: pointer;
+}
+
+.failure-badge:hover {
+  background: color-mix(in srgb, var(--danger) 25%, transparent);
 }
 
 @media (max-width: 1000px) {
@@ -1058,6 +1245,56 @@ body {
 
 .modal-narrow {
   width: min(560px, 100%);
+}
+
+.failure-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.failure-row {
+  padding: 10px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.failure-row + .failure-row {
+  margin-top: 8px;
+}
+
+.failure-row-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.failure-copy {
+  margin-left: auto;
+  padding: 2px 8px;
+  font-size: 11px;
+}
+
+.failure-url {
+  color: var(--text-dim);
+  word-break: break-all;
+  margin-bottom: 4px;
+}
+
+.failure-message {
+  font-size: 12.5px;
+  color: var(--danger);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.failure-clear {
+  margin-right: auto;
 }
 
 .field {
@@ -1226,6 +1463,55 @@ tr.is-selected .chip-recapture {
   gap: 6px;
 }
 
+/*
+ * An imported document with its own remove button — a plain .menu-item can't
+ * hold two independently clickable targets, so this wraps two buttons instead
+ * of being one. Importing is otherwise a one-way door: this is the only way
+ * to undo a mistaken pick.
+ */
+.menu-item-removable {
+  display: flex;
+  align-items: center;
+  border-radius: 4px;
+}
+
+.menu-item-removable:hover {
+  background: var(--bg-hover);
+}
+
+.menu-item-main {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: 0;
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  padding: 7px 9px;
+  text-align: left;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.menu-item-remove {
+  flex: none;
+  background: transparent;
+  border: 0;
+  color: var(--text-faint);
+  font-size: 13px;
+  padding: 4px 9px;
+  margin-right: 3px;
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0.6;
+}
+
+.menu-item-remove:hover {
+  opacity: 1;
+  color: var(--danger);
+  background: var(--bg-raised);
+}
+
 .menu-item-count {
   font-size: 11px;
   color: var(--accent);
@@ -1242,6 +1528,14 @@ tr.is-selected .chip-recapture {
   margin: 4px 2px;
 }
 
+/* Filenames are long and worth reading in full without truncation. */
+.menu-wide {
+  min-width: 340px;
+  max-width: 460px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
 .batchbar-service {
   flex: none;
   font-size: 11px;
@@ -1253,4 +1547,34 @@ tr.is-selected .chip-recapture {
 .bulk-confirm {
   display: inline-flex;
   gap: 6px;
+}
+
+/*
+ * Selection mode reuses the toolbar's own row, so entering it must not change
+ * the toolbar's height. Wrapping to a second line would move the table down by
+ * exactly the amount this is meant to avoid, so these actions scroll sideways
+ * in a narrow window instead of wrapping.
+ */
+.toolbar.is-selecting {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  background: var(--bg-raised);
+}
+
+.selection-count {
+  flex: none;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+/* Under nowrap the buttons would otherwise squeeze their labels to nothing. */
+.toolbar.is-selecting .btn,
+.toolbar.is-selecting .bulk-confirm {
+  flex: none;
+}
+
+.selection-clear {
+  margin-left: auto;
 }

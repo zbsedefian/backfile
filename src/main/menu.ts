@@ -14,7 +14,7 @@ import { app, BrowserWindow, Menu, MenuItemConstructorOptions, shell } from 'ele
 
 export type MenuAction =
   | 'open-workspace'
-  | 'analyze'
+  | 'add-article'
   | 'publish'
   | 'capture-all-archive'
   | 'capture-all-local'
@@ -27,6 +27,12 @@ export type MenuAction =
   | 'theme-system'
   | 'theme-light'
   | 'theme-dark'
+  | 'video-cookies-off'
+  | 'video-cookies-chrome'
+  | 'video-cookies-safari'
+  | 'video-cookies-firefox'
+  | 'video-cookies-edge'
+  | 'video-cookies-brave'
   | 'support-email'
 
 const DONATE_URL = 'https://buymeacoffee.com/zacharysedefian'
@@ -45,8 +51,28 @@ function item(
   return { label, accelerator, click: () => send(action) }
 }
 
-export function buildMenu(): void {
+/**
+ * Build (or rebuild) the application menu.
+ *
+ * Takes the current Video Cookies choice so its submenu can show a radio dot
+ * on the active entry — a settings submenu with no visible state reads as six
+ * commands rather than one choice, and the only way to learn which browser
+ * was active would be trial and error. Electron menus are static once set, so
+ * the caller rebuilds whenever the choice changes.
+ */
+export function buildMenu(videoCookiesBrowser: string | null = null): void {
   const isMac = process.platform === 'darwin'
+
+  const cookieChoice = (
+    label: string,
+    action: MenuAction,
+    value: string | null
+  ): MenuItemConstructorOptions => ({
+    label,
+    type: 'radio',
+    checked: videoCookiesBrowser === value,
+    click: () => send(action)
+  })
 
   const template: MenuItemConstructorOptions[] = [
     ...(isMac
@@ -77,10 +103,12 @@ export function buildMenu(): void {
     {
       label: 'File',
       submenu: [
-        item('Open Articles Folder…', 'open-workspace', 'CmdOrCtrl+O'),
+        item('Open Projects Folder…', 'open-workspace', 'CmdOrCtrl+O'),
         { type: 'separator' },
-        item('Analyze Links', 'analyze', 'CmdOrCtrl+R'),
-        item('Publish Archived Copy…', 'publish', 'CmdOrCtrl+Shift+P'),
+        // Not Cmd+R: the View menu's reload role already claims that, and two
+        // items with one accelerator means one of them silently loses it.
+        item('Add Article…', 'add-article', 'CmdOrCtrl+I'),
+        item('Export Archived Copy…', 'publish', 'CmdOrCtrl+Shift+P'),
         { type: 'separator' },
         item('Reveal Article in Folder', 'reveal-article', 'CmdOrCtrl+Shift+O'),
         { type: 'separator' },
@@ -109,14 +137,32 @@ export function buildMenu(): void {
         item('Capture All to archive.is', 'capture-all-archive', 'CmdOrCtrl+Shift+A'),
         item('Download All Local Copies', 'capture-all-local', 'CmdOrCtrl+Shift+D'),
         { type: 'separator' },
-        item('Stop Capturing', 'stop-capture', 'CmdOrCtrl+.')
+        item('Stop Capturing', 'stop-capture', 'CmdOrCtrl+.'),
+        { type: 'separator' },
+        {
+          // Off by default and its own submenu rather than a checkbox: this is
+          // the one setting that reads a real, logged-in browser session, and
+          // it exists only for the age-gated or sign-in-required video that
+          // cannot be fetched anonymously at all. Everything else in Backfile
+          // stays account-free.
+          label: 'Video Cookies',
+          submenu: [
+            cookieChoice('Off (age-gated videos will fail)', 'video-cookies-off', null),
+            { type: 'separator' },
+            cookieChoice('Chrome', 'video-cookies-chrome', 'chrome'),
+            cookieChoice('Safari', 'video-cookies-safari', 'safari'),
+            cookieChoice('Firefox', 'video-cookies-firefox', 'firefox'),
+            cookieChoice('Edge', 'video-cookies-edge', 'edge'),
+            cookieChoice('Brave', 'video-cookies-brave', 'brave')
+          ]
+        }
       ]
     },
 
     {
       label: 'View',
       submenu: [
-        item('Toggle Articles Panel', 'toggle-sidebar', 'CmdOrCtrl+1'),
+        item('Toggle Projects Panel', 'toggle-sidebar', 'CmdOrCtrl+1'),
         item('Toggle Detail Panel', 'toggle-detail', 'CmdOrCtrl+2'),
         item('Toggle Browser Pane', 'toggle-browser', 'CmdOrCtrl+3'),
         { type: 'separator' },

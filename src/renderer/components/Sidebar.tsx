@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { Article } from '../../shared/types'
-import { tierOf } from '../../shared/types'
+import { ownSources, tierOf } from '../../shared/types'
 
 interface Props {
   root: string | null
@@ -14,13 +14,19 @@ interface Props {
   onReveal: (articlePath: string) => void
 }
 
-/** Secured means the source has at least the archive.is snapshot that matters. */
-function securedCount(article: Article): number {
-  return article.sources.filter((l) => {
+/**
+ * Secured means the source has at least the archive.is snapshot that matters.
+ * Counted over the article's own sources, so an unticked reference document's
+ * links do not sit in the denominator dragging the folder's progress down.
+ */
+function securedCount(article: Article): { secured: number; total: number } {
+  const own = ownSources(article)
+  const secured = own.filter((l) => {
     if (l.excluded) return true
     const tier = tierOf(l)
     return tier === 'silver' || tier === 'gold'
   }).length
+  return { secured, total: own.length }
 }
 
 export function Sidebar({
@@ -66,7 +72,7 @@ export function Sidebar({
   return (
     <aside className="sidebar">
       <div className="sidebar-head">
-        <div className="sidebar-title">Articles</div>
+        <div className="sidebar-title">Projects</div>
         <button className="btn btn-quiet" onClick={onChooseWorkspace}>
           {root ? 'Change…' : 'Open folder…'}
         </button>
@@ -127,8 +133,7 @@ export function Sidebar({
         )}
 
         {listed.map((article) => {
-          const total = article.sources.length
-          const secured = securedCount(article)
+          const { secured, total } = securedCount(article)
           const complete = total > 0 && secured === total
           const isHidden = hiddenSet.has(article.name)
           return (
@@ -169,8 +174,13 @@ export function Sidebar({
               <div className="article-meta">
                 {total === 0 ? (
                   <span className="muted">
-                    {article.documents.length} file
-                    {article.documents.length === 1 ? '' : 's'} · not analyzed
+                    {article.drafts.length > 0
+                      ? `${article.drafts.length} imported · no links found`
+                      : article.documents.length > 0
+                        ? `${article.documents.length} file${
+                            article.documents.length === 1 ? '' : 's'
+                          } · not imported`
+                        : 'No documents here yet'}
                   </span>
                 ) : (
                   <span className={complete ? 'ok' : 'muted'}>

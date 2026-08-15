@@ -28,6 +28,20 @@ const CHROME_UA =
 const LOAD_TIMEOUT_MS = 45_000
 /** Time after load for lazy images and late scripts to settle before saving. */
 const SETTLE_MS = 2_500
+/**
+ * How long to give the page's own 'load' event before giving up on it and
+ * settling for 'dom-ready' instead.
+ *
+ * A news site's ad stack routinely embeds several tracking iframes right in
+ * the initial HTML — ad-sync pixels, consent-sync beacons — each redirecting
+ * in a loop that Chromium eventually cuts off, but not before it has kept the
+ * page "loading" for a long time. The spec has the top-level 'load' event wait
+ * for exactly those synchronously-embedded iframes, so a page can sit fully
+ * rendered and readable while 'did-finish-load' never fires at all. A reader's
+ * browser does not wait either — DOMContentLoaded is what makes an article
+ * readable, 'load' is bookkeeping for a page's own asset pipeline.
+ */
+const DOM_READY_FALLBACK_MS = 6_000
 
 /**
  * A stable, filesystem-safe name derived from the URL itself.
@@ -41,7 +55,22 @@ const SETTLE_MS = 2_500
  * The hash disambiguates URLs that share a truncated slug, so two different
  * pages on one site can never overwrite each other.
  */
-export function captureFilename(url: string): string {
+/**
+ * Whether a 'did-fail-load' event means the capture actually failed.
+ *
+ * A news site's ad stack routinely embeds several tracking iframes directly in
+ * the page — ad-sync pixels, consent-sync beacons — each looping through
+ * redirects that Chromium eventually cuts off. A real reader's browser does
+ * not care that one of those failed; it renders the article regardless. Only a
+ * failure of the main frame — the document savePage is actually going to
+ * capture — is a real failure, and even there, code -3 (ERR_ABORTED) fires on
+ * ordinary redirects with the main frame still ending up loaded.
+ */
+export function isRealLoadFailure(code: number, isMainFrame: boolean): boolean {
+  return isMainFrame && code !== -3
+}
+
+function captureBasename(url: string): string {
   let slug: string
   try {
     const u = new URL(url)
@@ -54,14 +83,30 @@ export function captureFilename(url: string): string {
     .replace(/^-+|-+$/g, '')
     .slice(0, 80)
   const hash = createHash('sha1').update(url).digest('hex').slice(0, 8)
-  return `${slug || 'page'}-${hash}.mhtml`
+  return `${slug || 'page'}-${hash}`
 }
 
+export function captureFilename(url: string): string {
+  return `${captureBasename(url)}.mhtml`
+}
+
+/** Same base name as the MHTML capture, so the two are easy to tell apart on disk. */
+export function screenshotFilename(url: string): string {
+  return `${captureBasename(url)}.png`
+}
+
+interface CapturedPage {
+  title: string
+  /** Null when the screenshot itself failed — never worth failing the whole capture over. */
+  screenshot: Buffer | null
+}
+
+/** Runs the load, saves the MHTML, and reads back the title and a screenshot. */
 async function captureToFile(
   url: string,
   destination: string,
   signal?: AbortSignal
-): Promise<void> {
+): Promise<CapturedPage> {
   const win = new BrowserWindow({
     show: false,
     webPreferences: {
@@ -91,22 +136,66 @@ async function captureToFile(
         () => reject(new Error(`timed out after ${LOAD_TIMEOUT_MS / 1000}s`)),
         LOAD_TIMEOUT_MS
       )
+      let domReadyTimer: NodeJS.Timeout | null = null
+      // A page that redirects or reloads its main frame can fire 'dom-ready'
+      // more than once, and idle listeners can still be in Electron's queue
+      // the instant `done` runs. `settled` makes every path a no-op after the
+      // first, so a late event can never call resolve/reject twice or reach
+      // into a webContents that captureToFile has since destroyed.
+      let settled = false
       const done = (err?: Error): void => {
+        if (settled) return
+        settled = true
         clearTimeout(timer)
+        if (domReadyTimer) clearTimeout(domReadyTimer)
+        win.webContents.removeListener('did-finish-load', onFinish)
+        win.webContents.removeListener('did-fail-load', onFail)
+        win.webContents.removeListener('dom-ready', onDomReady)
         err ? reject(err) : resolve()
       }
-      win.webContents.once('did-finish-load', () => done())
-      win.webContents.once('did-fail-load', (_e, code, desc) => {
-        // -3 is ERR_ABORTED, which fires on ordinary redirects and cancelled
-        // subresources; the main frame is still fine, so it is not a failure.
-        if (code === -3) return
-        done(new Error(`${desc} (${code})`))
-      })
+      const onFinish = (): void => done()
+      // Give 'load' a head start — it is the more complete signal when it
+      // fires promptly — and only fall back to treating dom-ready as good
+      // enough once it is clear 'load' is stuck behind an ad iframe rather
+      // than genuinely still working.
+      const onDomReady = (): void => {
+        if (domReadyTimer) clearTimeout(domReadyTimer)
+        domReadyTimer = setTimeout(done, DOM_READY_FALLBACK_MS)
+      }
+      // A real reader's browser does not care that an ad-tracking pixel or a
+      // consent-sync beacon buried in the page failed to load — it renders the
+      // article regardless. A capture that failed on every one of those would
+      // be failing on almost nothing: kyivpost.com's article body loads fine
+      // while a FreeWheel ad-sync iframe loops into ERR_TOO_MANY_REDIRECTS in
+      // the background. Only a failure of the main frame itself — the thing
+      // savePage is actually going to capture — is a real failure.
+      const onFail = (
+        _e: unknown,
+        code: number,
+        desc: string,
+        _url: string,
+        isMainFrame: boolean
+      ): void => {
+        if (isRealLoadFailure(code, isMainFrame)) done(new Error(`${desc} (${code})`))
+      }
+      win.webContents.on('did-finish-load', onFinish)
+      win.webContents.on('did-fail-load', onFail)
+      win.webContents.on('dom-ready', onDomReady)
       win.loadURL(url).catch(done)
     })
 
     await new Promise((r) => setTimeout(r, SETTLE_MS))
     await win.webContents.savePage(destination, 'MHTML')
+    // Best-effort: a page whose capture succeeded is still worth keeping even
+    // without a thumbnail, so a screenshot failure here is swallowed rather
+    // than failing the whole local capture.
+    const screenshot = await win.webContents
+      .capturePage()
+      .then((img) => img.toPNG())
+      .catch(() => null)
+    // Read after the settle, so a page that sets its real headline in script
+    // has done so. Free: this window has the page loaded either way.
+    return { title: win.webContents.getTitle(), screenshot }
   } finally {
     signal?.removeEventListener('abort', onAbort)
     // Always tear the window down, or a failed capture leaks a live renderer.
@@ -129,11 +218,25 @@ export const localAdapter: CaptureAdapter = {
     const staging = `${destination}.partial`
     try {
       await fs.mkdir(dir, { recursive: true })
-      await captureToFile(url, staging, ctx.signal)
+      const { title, screenshot } = await captureToFile(url, staging, ctx.signal)
       await fs.rename(staging, destination)
+
+      let screenshotPath = ''
+      if (screenshot) {
+        const screenshotName = screenshotFilename(url)
+        // Same deterministic-overwrite reasoning as the MHTML above; failing
+        // to write the thumbnail is not worth losing the capture itself over.
+        try {
+          await fs.writeFile(path.join(dir, screenshotName), screenshot)
+          screenshotPath = path.join(CAPTURE_DIRNAME, screenshotName)
+        } catch {
+          // The capture itself already succeeded; a missing thumbnail is fine.
+        }
+      }
+
       // The stored path stays relative so the article folder can be moved,
       // renamed, synced or handed to an editor without breaking every row.
-      return ok('local', url, path.join(CAPTURE_DIRNAME, filename))
+      return ok('local', url, path.join(CAPTURE_DIRNAME, filename), title, screenshotPath)
     } catch (err) {
       await fs.rm(staging, { force: true }).catch(() => undefined)
       if (ctx.signal?.aborted) return fail('local', url, 'cancelled')

@@ -15,8 +15,29 @@ export interface SourceLink {
   url: string
   /** The clickable text the URL was behind, when it had any. */
   anchorText: string
+  /**
+   * The page's own headline, read from a capture rather than the network.
+   *
+   * A list of bare URLs is unreadable at a glance — nytimes.com/2026/05/05/…
+   * says nothing about which citation it is. The title comes from the local
+   * copy: Backfile already loads the page in a real browser to save it, so the
+   * headline is there for free, and reading it back later needs nothing but the
+   * file on disk.
+   */
+  title: string
   /** Names of the .docx files this URL was found in (an article has drafts). */
   foundIn: string[]
+  /**
+   * Which imported document(s) this row belongs to, for filtering.
+   *
+   * Populated the same way as `foundIn` — every document an "Add article"
+   * import found this URL in — but kept as its own field because `foundIn`
+   * also drives orphan detection, and a future reason to filter by source
+   * (e.g. a document that stops citing a link but should still "own" it for
+   * filtering) should not have to fight that logic to do it. Empty for a link
+   * added by hand, which has no source document.
+   */
+  articleSource: string[]
   /** Permanent archive.today/archive.is snapshot, captured by hand. */
   archiveIs: string
   /** Wayback Machine snapshot. Optional by design — off unless asked for. */
@@ -32,6 +53,15 @@ export interface SourceLink {
    * only part that actually matters.
    */
   videoPath: string
+  /**
+   * Path of a screenshot taken alongside the local capture, relative to the
+   * article folder.
+   *
+   * MHTML opens like a page, not like a snapshot — telling two captures of the
+   * same URL apart, months later, means actually opening each one. A
+   * thumbnail answers that at a glance.
+   */
+  screenshotPath: string
   /** ISO timestamp of the most recent successful capture. */
   capturedAt: string
   /** Free-text, for the journalist. Never written to by the app. */
@@ -50,8 +80,14 @@ export interface Article {
   name: string
   /** Absolute path to the article folder. */
   path: string
-  /** Every .docx in the folder, excluding Word's ~$ lock files. */
+  /** Every document in the folder, excluding Word's ~$ lock files. */
   documents: string[]
+  /**
+   * The subset of `documents` confirmed to be the journalist's own drafts.
+   * Only these are analysed; the rest are reference material that happens to
+   * live in the same folder.
+   */
+  drafts: string[]
   /** Populated once sources.csv has been read. */
   sources: SourceLink[]
   /** True when the folder has a sources.csv yet to be created. */
@@ -70,6 +106,10 @@ export interface CaptureResult {
   url: string
   /** Snapshot URL, or the local file path for a local capture. */
   value?: string
+  /** The page's headline, when the capture loaded the page and so knows it. */
+  title?: string
+  /** Path of a screenshot taken alongside a local capture, when there is one. */
+  screenshotPath?: string
   error?: string
 }
 
@@ -91,6 +131,29 @@ export function isPermanentCitation(url: string): boolean {
   } catch {
     return false
   }
+}
+
+/**
+ * A source is stranded when the only documents citing it are ones no longer
+ * ticked as drafts — a downloaded reference piece, say, whose links were pulled
+ * in before anyone said it was not a draft.
+ *
+ * Kept as one definition because the list, the pending counts, "capture all"
+ * and the sidebar progress bar all have to agree about it. If the sidebar says
+ * 103 sources and the list shows 58, the number nobody trusts is both of them.
+ *
+ * A source with no citing document at all is not stranded: that is a hand-added
+ * link, or one an editor cut, and both belong to the journalist.
+ */
+export function isStranded(link: SourceLink, drafts: string[]): boolean {
+  if (link.foundIn.length === 0) return false
+  const ticked = new Set(drafts)
+  return !link.foundIn.some((d) => ticked.has(d))
+}
+
+/** The sources an article still claims as its own. */
+export function ownSources(article: Pick<Article, 'sources' | 'drafts'>): SourceLink[] {
+  return article.sources.filter((l) => !isStranded(l, article.drafts))
 }
 
 /**

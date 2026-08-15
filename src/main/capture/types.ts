@@ -21,6 +21,11 @@ export interface CaptureContext {
    * like the button did nothing at all.
    */
   signal?: AbortSignal
+  /**
+   * Which browser's login cookies the video adapter may use, when a video
+   * requires being signed in to watch. Every other adapter ignores this.
+   */
+  cookiesBrowser?: string | null
 }
 
 export interface CaptureAdapter {
@@ -38,8 +43,14 @@ export interface CaptureAdapter {
   lookup?(url: string): Promise<string | null>
 }
 
-export function ok(service: ServiceId, url: string, value: string): CaptureResult {
-  return { ok: true, service, url, value }
+export function ok(
+  service: ServiceId,
+  url: string,
+  value: string,
+  title?: string,
+  screenshotPath?: string
+): CaptureResult {
+  return { ok: true, service, url, value, title, screenshotPath }
 }
 
 export function fail(service: ServiceId, url: string, error: string): CaptureResult {

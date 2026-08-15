@@ -21,6 +21,7 @@ import { promisify } from 'node:util'
 import { CaptureAdapter, CaptureContext, fail, ok } from './types'
 import { CaptureResult } from '../../shared/types'
 import { CAPTURE_DIRNAME } from './local'
+import { ytdlpInstallPath } from './ytdlpInstall'
 
 const run = promisify(execFile)
 
@@ -48,8 +49,65 @@ const FORMAT =
   'bv*+ba/b'
 
 export const YTDLP_MISSING =
-  'yt-dlp is not installed. Install it with "brew install yt-dlp" (macOS) or ' +
-  '"pipx install yt-dlp", then try again.'
+  'yt-dlp is not installed. Use "Install yt-dlp" under Capture all… › Videos, ' +
+  'or install it yourself with "brew install yt-dlp" (macOS) or "pipx install yt-dlp".'
+
+/**
+ * Three distinct failures get an actionable line appended, checked in this
+ * order because each one rules out the next — giving two pieces of advice at
+ * once on the same error is worse than picking wrong, since it leaves the
+ * journalist to guess which one is real.
+ *
+ * A cookie-access failure means Video Cookies is turned on but the OS itself
+ * is refusing to hand the browser's cookie database to yt-dlp — a macOS
+ * permission wall, not anything wrong with the video, the network, or
+ * yt-dlp's own code. Checked first because its signature ("cookie",
+ * "keychain", "permission") can otherwise look like the sign-in-required case
+ * below, and the fix is completely different: no browser is even being read.
+ *
+ * An age-gated or sign-in-required video is not a bug in yt-dlp either: the
+ * video genuinely requires being logged in to watch, and yt-dlp already says
+ * so directly (it is the one that suggests --cookies-from-browser in its own
+ * error text, which is the most reliable way to recognise this case — more
+ * durable than matching yt-dlp's human-readable wording, which changes).
+ * Updating yt-dlp will not fix this.
+ *
+ * Everything else that looks like a 403 or a "confirm you're not a bot" wall
+ * is, by contrast, overwhelmingly a stale yt-dlp: YouTube changes its player
+ * often enough that this is closer to routine than exceptional, and yt-dlp
+ * ships a fix just as often — which is also why it is not bundled with
+ * Backfile (see the file header). Cookies will not fix this one.
+ */
+export function withUpdateHint(message: string, cookiesBrowser?: string | null): string {
+  if (
+    cookiesBrowser &&
+    /keychain|cookie.{0,20}(database|permission|denied|access)|could not (find|copy|load).{0,20}cooki/i.test(
+      message
+    )
+  ) {
+    return cookiesBrowser === 'safari'
+      ? `${message} — macOS is blocking access to Safari's cookies. Grant Backfile Full ` +
+          'Disk Access: System Settings › Privacy & Security › Full Disk Access, then try again.'
+      : `${message} — macOS is blocking access to ${cookiesBrowser}'s saved cookies, ` +
+          `likely a Keychain prompt that needs approving. Try again — if it keeps failing, ` +
+          `open Keychain Access and unlock ${cookiesBrowser}'s "Safe Storage" item.`
+  }
+  if (/cookies-from-browser|--cookies\b/i.test(message)) {
+    return (
+      `${message} — this video needs a signed-in YouTube session to watch. ` +
+      'Backfile can pass your own browser’s login to yt-dlp for exactly ' +
+      'this: turn it on under Capture › Video Cookies, then try again.'
+    )
+  }
+  if (/\b403\b|forbidden|confirm you.?re not a bot|not a bot/i.test(message)) {
+    return (
+      `${message} — this usually means yt-dlp is out of date. YouTube changes ` +
+      'often and yt-dlp ships a fix just as often; update it ("yt-dlp -U", or ' +
+      '"brew upgrade yt-dlp" on macOS) and try again.'
+    )
+  }
+  return message
+}
 
 let cachedPath: string | null | undefined
 
@@ -57,12 +115,17 @@ let cachedPath: string | null | undefined
 export async function findYtDlp(): Promise<string | null> {
   if (cachedPath !== undefined) return cachedPath
 
+  const installed = ytdlpInstallPath()
   const candidates = [
     'yt-dlp',
     '/opt/homebrew/bin/yt-dlp',
     '/usr/local/bin/yt-dlp',
     '/usr/bin/yt-dlp',
-    path.join(process.env.HOME ?? '', '.local/bin/yt-dlp')
+    path.join(process.env.HOME ?? '', '.local/bin/yt-dlp'),
+    // Where "Install yt-dlp" in the app itself puts it — checked last so a
+    // real system install, likely kept newer by the journalist's own package
+    // manager, still wins when both exist.
+    ...(installed ? [installed] : [])
   ]
 
   for (const candidate of candidates) {
@@ -123,6 +186,11 @@ export const videoAdapter: CaptureAdapter = {
           // sees the existing file and skips — meaning a re-capture to replace
           // a bad download would silently do nothing.
           '--force-overwrites',
+          // Opt-in only (see Settings.videoCookiesBrowser): an age-gated or
+          // sign-in-required video cannot be fetched anonymously at all, and
+          // this is the one thing Backfile does that touches a real, logged-in
+          // browser session rather than making a plain anonymous request.
+          ...(ctx.cookiesBrowser ? ['--cookies-from-browser', ctx.cookiesBrowser] : []),
           '-o',
           template,
           '--print',
@@ -153,7 +221,11 @@ export const videoAdapter: CaptureAdapter = {
         .map((line) => line.trim())
         .filter((line) => line && !/^WARNING:|update|pip|wheel|PyPi/i.test(line))
         .pop()
-      return fail('video', url, stderr || anyErr.message || 'yt-dlp failed')
+      return fail(
+        'video',
+        url,
+        withUpdateHint(stderr || anyErr.message || 'yt-dlp failed', ctx.cookiesBrowser)
+      )
     }
   }
 }

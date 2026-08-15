@@ -3,7 +3,7 @@ import test from 'node:test'
 import { promises as fs } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { cleanTrackingParams, normalizeUrl, isLikelyVideoPage } from '../src/shared/links'
+import { cleanTrackingParams, normalizeUrl } from '../src/shared/links'
 import { scanWorkspace } from '../src/main/project/scan'
 
 test('strips utm parameters', () => {
@@ -47,13 +47,6 @@ test('the two tracked variants of one article collapse to the same URL', () => {
 
 test('normalize still strips trailing punctuation', () => {
   assert.equal(normalizeUrl('https://a.com/story.'), 'https://a.com/story')
-})
-
-test('recognises video hosts', () => {
-  assert.ok(isLikelyVideoPage('https://www.youtube.com/watch?v=x'))
-  assert.ok(isLikelyVideoPage('https://youtu.be/x'))
-  assert.ok(isLikelyVideoPage('https://www.tiktok.com/@a/video/1'))
-  assert.ok(!isLikelyVideoPage('https://nytimes.com/a'))
 })
 
 test('finds collections nested below the workspace root', async () => {
