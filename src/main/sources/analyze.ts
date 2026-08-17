@@ -164,6 +164,14 @@ export async function recordCapture(
     if (clean) link.title = clean
     if (screenshotPath) link.screenshotPath = screenshotPath
     link.capturedAt = new Date().toISOString().slice(0, 19).replace('T', ' ')
+    // A capture succeeding — local, archive.is, Wayback or video — is itself
+    // proof the source resolves right now, and stronger proof than the
+    // link-rot checker's plain request: it means a real load actually got the
+    // page. Clears any earlier "gone"/"unverified" flag rather than leaving
+    // it stale until the next automated check, which for a source behind
+    // bot-detection may never come back clean on its own.
+    link.linkStatus = 'ok'
+    link.lastCheckedAt = link.capturedAt
     await writeSources(articlePath, links)
     return links
   })

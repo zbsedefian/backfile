@@ -91,6 +91,8 @@ interface Props {
   onViewLocal: (relativePath: string) => void
   /** A downloaded video opens with whatever the OS plays media files with. */
   onOpenLocal: (relativePath: string) => void
+  /** A human looked at a flagged source themselves and it's fine — clears the flag. */
+  onResolveLinkCheck: (url: string) => void
   sort: Sort
   onSortChange: (sort: Sort) => void
   /** Non-empty when a search is filtering the list, for a truthful empty state. */
@@ -134,6 +136,7 @@ export function SourceTable({
   onOpenExternal,
   onViewLocal,
   onOpenLocal,
+  onResolveLinkCheck,
   sort,
   onSortChange,
   query,
@@ -288,6 +291,18 @@ export function SourceTable({
                       >
                         unverified
                       </span>
+                    )}
+                    {outcome !== null && (
+                      <button
+                        className="linklike small"
+                        title="Looked at it yourself and it's fine? Clear the flag — a bot wall will just fail the same way on the next automated check."
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onResolveLinkCheck(link.url)
+                        }}
+                      >
+                        resolve
+                      </button>
                     )}
                     <CopyLinkButton url={link.url} />
                   </div>

@@ -726,6 +726,31 @@ export function App(): JSX.Element {
     setStatus(`Removed ${urls.length} source${urls.length === 1 ? '' : 's'}.`)
   }, [selected, patchArticle])
 
+  /**
+   * A human looked at the source themselves and it's fine — clears the flag
+   * without waiting on another automated check. That matters most for
+   * `unverified`: the same bot wall that produced it will just as likely
+   * trip the same way on the next automated check, forever, so the only way
+   * out is a person saying so.
+   */
+  const resolveLinkCheck = useCallback(
+    async (url: string) => {
+      if (!selected) return
+      const next = selected.sources.map((l) =>
+        l.url === url
+          ? {
+              ...l,
+              linkStatus: 'ok' as const,
+              lastCheckedAt: new Date().toISOString().slice(0, 19).replace('T', ' ')
+            }
+          : l
+      )
+      patchArticle(selected.path, next)
+      await window.backfile.saveSources(selected.path, next)
+    },
+    [selected, patchArticle]
+  )
+
   const toggleExcluded = useCallback(
     async (url: string, excluded: boolean) => {
       if (!selected) return
@@ -1789,6 +1814,7 @@ export function App(): JSX.Element {
                 onOpenExternal={openExternal}
                 onViewLocal={viewLocal}
                 onOpenLocal={openLocal}
+                onResolveLinkCheck={resolveLinkCheck}
                 emptyHint={emptyHint}
                 sourceColWidth={sourceColWidth}
                 onSourceColWidthChange={(w) => setSourceColWidth(clamp(w, 200, 720))}
