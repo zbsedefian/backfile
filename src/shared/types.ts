@@ -171,15 +171,27 @@ export function isStranded(link: SourceLink, drafts: string[]): boolean {
 }
 
 /**
- * A source whose original URL no longer resolves to what it once did.
+ * How confidently the last link-rot check says something is wrong with a
+ * source's original URL — null if it has not been checked, or checked clean.
  *
- * Excluded links are never rotted — DOI and repository links resolve
- * permanently by design, so a link-rot check has nothing to tell a
+ * Only a 404 counts as `gone`: the server itself said the page no longer
+ * exists. Every other non-clean result a plain request can produce — a
+ * redirect to the homepage, a timeout, a server error, an unreachable host —
+ * is just as often bot-detection blocking an automated check as it is real
+ * link rot, so it is surfaced as merely `unverified` rather than asserted as
+ * dead. See checkLinks.ts's own doc comment for why a plain request cannot
+ * reliably tell the two apart.
+ *
+ * Excluded links never produce either outcome — DOI and repository links
+ * resolve permanently by design, so a link-rot check has nothing to tell a
  * journalist about one, the same reasoning that keeps them off the tier
  * ladder in tierOf below.
  */
-export function isRotted(link: SourceLink): boolean {
-  return !link.excluded && link.linkStatus !== '' && link.linkStatus !== 'ok'
+export type LinkOutcome = 'gone' | 'unverified'
+
+export function linkOutcome(link: SourceLink): LinkOutcome | null {
+  if (link.excluded || link.linkStatus === '' || link.linkStatus === 'ok') return null
+  return link.linkStatus === 'notfound' ? 'gone' : 'unverified'
 }
 
 /** The sources an article still claims as its own. */

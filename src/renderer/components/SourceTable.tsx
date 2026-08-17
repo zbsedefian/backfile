@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { ServiceId, SourceLink } from '../../shared/types'
-import { isRotted, tierOf } from '../../shared/types'
+import { linkOutcome, tierOf } from '../../shared/types'
 import type { ClickModifiers } from '../../shared/selection'
 import { TierBadge } from './Tier'
 import { ResizeHandle } from './ResizeHandle'
@@ -19,13 +19,21 @@ export interface Sort {
 /** Ordering for the tier column: least archived first, so gaps surface. */
 const TIER_RANK: Record<string, number> = { none: 0, bronze: 1, silver: 2, gold: 3 }
 
-/** What each dead-link outcome means, for the "rotted" pill's tooltip. */
-const ROTTED_LABEL: Record<string, string> = {
-  redirected: 'Redirects to the site’s homepage — the page itself is gone',
-  notfound: 'The original URL now returns 404',
-  servererror: 'The original URL now returns an error',
-  timeout: 'The original URL timed out',
-  unreachable: 'The original URL could not be reached'
+/**
+ * What each unverified outcome means, for the pill's tooltip.
+ *
+ * Deliberately hedged — none of these assert the page is gone, only that an
+ * automated check could not confirm it resolves. A redirect to the homepage,
+ * a timeout, a server error and an unreachable host are all just as
+ * plausibly bot-detection blocking the check as they are real link rot; see
+ * linkOutcome's own doc comment in shared/types.ts for why only a 404 is
+ * shown with any certainty.
+ */
+const UNVERIFIED_LABEL: Record<string, string> = {
+  redirected: 'Redirects to the site’s homepage — may be gone, may be a bot check. Worth a manual look.',
+  servererror: 'Returned an error when checked automatically — could be down, or could be blocking the check.',
+  timeout: 'Timed out when checked automatically — could be down, slow, or blocking the check.',
+  unreachable: 'Could not be reached when checked automatically — could be gone, or the check itself failed.'
 }
 
 function hostOf(url: string): string {
@@ -227,6 +235,7 @@ export function SourceTable({
             const { host, rest } = displayUrl(link.url)
             const selected = selectedSet.has(link.url)
             const focused = focusedUrl === link.url
+            const outcome = linkOutcome(link)
             return (
               <tr
                 key={link.url}
@@ -264,9 +273,20 @@ export function SourceTable({
                       </span>
                     )}
                     {link.excluded && <span className="pill">excluded</span>}
-                    {isRotted(link) && (
-                      <span className="pill pill-rotted" title={ROTTED_LABEL[link.linkStatus as keyof typeof ROTTED_LABEL] ?? 'Link no longer resolves'}>
-                        rotted
+                    {outcome === 'gone' && (
+                      <span className="pill pill-rotted" title="The original URL now returns 404 — the server says this page is gone">
+                        NOT FOUND
+                      </span>
+                    )}
+                    {outcome === 'unverified' && (
+                      <span
+                        className="pill pill-unverified"
+                        title={
+                          UNVERIFIED_LABEL[link.linkStatus] ??
+                          'Could not confirm this page still resolves'
+                        }
+                      >
+                        unverified
                       </span>
                     )}
                     <CopyLinkButton url={link.url} />

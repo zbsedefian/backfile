@@ -990,11 +990,19 @@ body {
   border-color: color-mix(in srgb, var(--danger) 40%, transparent);
 }
 
-/* A source whose original URL no longer resolves — the whole point of the
-   link-rot check is that this cannot hide in a list of otherwise-fine rows. */
+/* A source whose original URL now returns 404 — the server itself confirms
+   the page is gone, so this is the one outcome shown with real alarm. */
 .pill-rotted {
   color: var(--danger);
   border-color: color-mix(in srgb, var(--danger) 40%, transparent);
+}
+
+/* Everything short of a confirmed 404 — a redirect, a timeout, an error, an
+   unreachable host — is just as often a bot-detection wall as real link rot,
+   so it gets a neutral pill rather than the same alarm as pill-rotted. */
+.pill-unverified {
+  color: var(--text-faint);
+  border-color: var(--border);
 }
 
 .linklike {

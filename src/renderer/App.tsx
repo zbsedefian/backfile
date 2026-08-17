@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { RewritePlan } from '../main/docx/rewriteLinks'
 import type { Article, ArchiveTier, ServiceId, SourceLink } from '../shared/types'
-import { isRotted, isStranded, ownSources, tierOf } from '../shared/types'
+import { isStranded, linkOutcome, ownSources, tierOf } from '../shared/types'
 import { FEATURES } from '../shared/features'
 import {
   EMPTY_SELECTION,
@@ -39,7 +39,7 @@ import { DEFAULT_TSA_URL } from '../shared/evidence'
  * filter and the tier counts shown next to it are the same control — see the
  * note above the filter bar in the JSX below for why that used to be two.
  */
-type Filter = 'all' | ArchiveTier | 'excluded' | 'orphaned' | 'rotted'
+type Filter = 'all' | ArchiveTier | 'excluded' | 'orphaned' | 'flagged'
 
 const SERVICE_LABEL: Record<ServiceId, string> = {
   archiveIs: 'archive.is',
@@ -522,7 +522,7 @@ export function App(): JSX.Element {
         setStatus(
           p.detail === 'Stopped.'
             ? `Link check stopped — ${p.checked ?? 0} checked.`
-            : `Link check done: ${p.checked ?? 0} checked, ${p.rotted ?? 0} rotted.`
+            : `Link check done: ${p.checked ?? 0} checked, ${p.flagged ?? 0} flagged.`
         )
         if (selectedPath) void refreshSources(selectedPath)
         return
@@ -815,9 +815,9 @@ export function App(): JSX.Element {
       // genuinely junk. Sources stranded by unticking a document land here too:
       // hidden from the working views, still reachable for removal.
       if (filter === 'orphaned') return l.foundIn.length === 0 || stranded.has(l.url)
-      // Same reasoning as orphaned: a rotted link is kept findable for
+      // Same reasoning as orphaned: a flagged link is kept findable for
       // cleanup even if the document citing it has since been unticked.
-      if (filter === 'rotted') return isRotted(l)
+      if (filter === 'flagged') return linkOutcome(l) !== null
       if (stranded.has(l.url)) return false
       if (filter === 'all') return true
       // Same precedence as tierCounts below: excluded is checked before tier,
@@ -989,8 +989,8 @@ export function App(): JSX.Element {
     [selected, articleSources]
   )
 
-  const rottedCount = useMemo(
-    () => (selected ? articleSources.filter(isRotted).length : 0),
+  const flaggedCount = useMemo(
+    () => (selected ? articleSources.filter((l) => linkOutcome(l) !== null).length : 0),
     [selected, articleSources]
   )
 
@@ -1549,13 +1549,13 @@ export function App(): JSX.Element {
                       >
                         Orphaned
                       </button>
-                      {FEATURES.linkHealth && rottedCount > 0 && (
+                      {FEATURES.linkHealth && flaggedCount > 0 && (
                         <button
-                          className={`tab${filter === 'rotted' ? ' is-active' : ''}`}
-                          onClick={() => setFilter('rotted')}
-                          title="The original URL no longer resolves to what it once did, per the last link check"
+                          className={`tab${filter === 'flagged' ? ' is-active' : ''}`}
+                          onClick={() => setFilter('flagged')}
+                          title="The last link check found something worth a look: a confirmed 404, or an outcome it could not verify as clean"
                         >
-                          Rotted ({rottedCount})
+                          Flagged ({flaggedCount})
                         </button>
                       )}
                     </div>

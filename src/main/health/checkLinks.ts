@@ -35,7 +35,8 @@ export interface CheckProgress {
   status?: LinkStatus
   /** Set only on the final 'finished' progress event. */
   checked?: number
-  rotted?: number
+  /** How many came back not-clean — confirmed gone or merely unverified alike. */
+  flagged?: number
   detail?: string
 }
 
@@ -160,7 +161,7 @@ export class LinkCheckRunner {
   ): Promise<CheckProgress> {
     const queue = LinkCheckRunner.pending(links)
     let done = 0
-    let rotted = 0
+    let flagged = 0
 
     const runOne = async (link: SourceLink): Promise<QueueOutcome> => {
       onProgress({ done, total: queue.length, url: link.url, phase: 'checking' })
@@ -168,7 +169,7 @@ export class LinkCheckRunner {
       if (status === 'cancelled') return 'cancelled'
       await recordLinkCheck(articlePath, link.url, status)
       done++
-      if (status !== 'ok') rotted++
+      if (status !== 'ok') flagged++
       onProgress({ done, total: queue.length, url: link.url, phase: 'checked', status })
       return 'ok'
     }
@@ -190,7 +191,7 @@ export class LinkCheckRunner {
       url: '',
       phase: 'finished',
       checked: done,
-      rotted,
+      flagged,
       detail: this.cancelled ? 'Stopped.' : undefined
     }
     onProgress(final)
