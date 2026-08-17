@@ -65,6 +65,7 @@ function link(url: string, over: Partial<SourceLink> = {}): SourceLink {
     capturedAt: '',
     lastCheckedAt: '',
     linkStatus: '',
+    verifiedBy: '',
     notes: '',
     excluded: false,
     excludedReason: '',

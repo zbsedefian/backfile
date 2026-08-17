@@ -99,6 +99,17 @@ export interface SourceLink {
   lastCheckedAt: string
   /** Outcome of the most recent link-rot check. Empty until checked. */
   linkStatus: LinkStatus | ''
+  /**
+   * Who established `linkStatus` — an automated check, or a person who
+   * watched the page load in the pane.
+   *
+   * Recorded because a re-check would otherwise undo human verification on
+   * exactly the sources that needed it: a bot wall answers the automated
+   * check the same way every run, so a source a journalist confirmed by hand
+   * would fall straight back to unverified on the next pass, forever. See
+   * overridesExisting in main/health/checkLinks.ts for what this protects.
+   */
+  verifiedBy: 'auto' | 'human' | ''
 }
 
 export interface Article {

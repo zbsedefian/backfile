@@ -105,6 +105,7 @@ async function addSourceLocked(
     capturedAt: archiveIs || wayback ? new Date().toISOString().slice(0, 19).replace('T', ' ') : '',
     lastCheckedAt: '',
     linkStatus: '',
+    verifiedBy: '',
     notes: input.notes ?? (parsed.snapshotOnly && !parsed.url ? 'source URL not yet recorded' : ''),
     excluded: permanent,
     excludedReason: permanent ? 'permanent citation (DOI/repository) — no snapshot needed' : ''

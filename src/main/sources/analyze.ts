@@ -91,6 +91,7 @@ export async function analyzeArticle(
           : '',
       lastCheckedAt: '',
       linkStatus: '',
+      verifiedBy: '',
       notes: '',
       // Pre-excluding DOI and repository links keeps the work queue honest:
       // they are already permanent, and chasing snapshots for them is busywork.
@@ -203,7 +204,11 @@ function recordCaptureEvidence(
   title: string | undefined
 ): void {
   const stamp = (status: SourceLink['linkStatus']): void => {
+    // A capture is Backfile's own observation, not a person's, so it does not
+    // outrank a human verification — see overridesExisting in health/checkLinks.
+    if (link.verifiedBy === 'human' && status !== 'ok') return
     link.linkStatus = status
+    link.verifiedBy = 'auto'
     link.lastCheckedAt = link.capturedAt
   }
 

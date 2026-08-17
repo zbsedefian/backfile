@@ -117,6 +117,44 @@ export async function checkOne(
 }
 
 /**
+ * Outcomes trustworthy enough to overwrite anything already recorded.
+ *
+ * These are the ones a bot wall cannot manufacture: a page that actually
+ * loaded, an explicit 404, a redirect that landed on the homepage. Everything
+ * else — a timeout, an unreachable host, a server error, a captured
+ * interstitial — is exactly what a wall produces when it turns away an
+ * automated request, and so says nothing certain about the source.
+ */
+const CONCLUSIVE: ReadonlySet<string> = new Set<LinkStatus>([
+  'ok',
+  'notfound',
+  'redirected'
+])
+
+export function isConclusive(status: LinkStatus): boolean {
+  return CONCLUSIVE.has(status)
+}
+
+/**
+ * Whether a fresh check may overwrite what is already recorded.
+ *
+ * "Check links" is a re-check: it runs across every source, including ones
+ * already settled, because a page that resolved last month can be gone today.
+ * The single exception is that an inconclusive automated result may not
+ * discard a human verification — the journalist got past a wall the checker
+ * cannot, and re-flagging that source every run would make verifying it by
+ * hand pointless work. A conclusive result still wins, so a source that
+ * genuinely dies after being verified is still caught.
+ */
+export function overridesExisting(
+  existing: Pick<SourceLink, 'linkStatus' | 'verifiedBy'>,
+  incoming: LinkStatus
+): boolean {
+  if (isConclusive(incoming)) return true
+  return existing.verifiedBy !== 'human' || existing.linkStatus === ''
+}
+
+/**
  * Record one check against a single link and persist it.
  *
  * Locked on the same key recordCapture uses, so a link check and a capture
@@ -127,13 +165,23 @@ export async function checkOne(
 export async function recordLinkCheck(
   articlePath: string,
   url: string,
-  status: LinkStatus
+  status: LinkStatus,
+  by: 'auto' | 'human' = 'auto'
 ): Promise<SourceLink[]> {
   return withLock(articlePath, async () => {
     const links = await readSources(articlePath)
     const link = links.find((l) => l.url === url)
     if (!link) return links
+    // A human's first-hand look outranks an inconclusive automated result.
+    // The timestamp still moves: the check did run, it just learned nothing
+    // that beats what is already recorded.
+    if (by === 'auto' && !overridesExisting(link, status)) {
+      link.lastCheckedAt = new Date().toISOString().slice(0, 19).replace('T', ' ')
+      await writeSources(articlePath, links)
+      return links
+    }
     link.linkStatus = status
+    link.verifiedBy = by
     link.lastCheckedAt = new Date().toISOString().slice(0, 19).replace('T', ' ')
     await writeSources(articlePath, links)
     return links

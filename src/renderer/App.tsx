@@ -1798,7 +1798,7 @@ export function App(): JSX.Element {
                       className="btn"
                       disabled={analyzing || articleSources.length === 0}
                       onClick={() => void checkLinks()}
-                      title="Request every source's original URL and record whether it still resolves"
+                      title="Request every source's original URL and record whether it still resolves. Re-checks everything each time, but will not undo a source you verified by hand unless the page has genuinely gone."
                     >
                       Check links
                     </button>

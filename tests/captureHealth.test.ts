@@ -15,6 +15,7 @@ import path from 'node:path'
 import { addSource, createCollection } from '../src/main/sources/manual'
 import { recordCapture } from '../src/main/sources/analyze'
 import { readSources } from '../src/main/sources/csv'
+import { overridesExisting, recordLinkCheck } from '../src/main/health/checkLinks'
 import type { LinkStatus } from '../src/shared/types'
 
 const URL = 'https://example.com/2024/an-article'
@@ -104,4 +105,72 @@ test('the capture itself is still recorded whatever the verdict', async () => {
   const [link] = await readSources(folder)
   assert.equal(link.localPath, 'archive/a.mhtml', 'a flagged page is still a capture on disk')
   assert.notEqual(link.capturedAt, '')
+})
+
+// ---- re-checking must not undo human verification ----
+
+test('an inconclusive re-check leaves a human verification standing', async () => {
+  // The loop this prevents: a bot wall answers the automated check the same
+  // way every run, so without this a source verified by hand falls back to
+  // unverified on the very next "Check links" — forever.
+  const folder = await flaggedCollection()
+  await recordLinkCheck(folder, URL, 'ok', 'human')
+
+  for (const inconclusive of ['timeout', 'unreachable', 'servererror'] as LinkStatus[]) {
+    await recordLinkCheck(folder, URL, inconclusive)
+    const [link] = await readSources(folder)
+    assert.equal(link.linkStatus, 'ok', `${inconclusive} must not discard a human verification`)
+    assert.equal(link.verifiedBy, 'human')
+  }
+})
+
+test('an inconclusive re-check still records that it ran', async () => {
+  const folder = await flaggedCollection()
+  await recordLinkCheck(folder, URL, 'ok', 'human')
+  const before = (await readSources(folder))[0].lastCheckedAt
+  await new Promise((r) => setTimeout(r, 1100))
+  await recordLinkCheck(folder, URL, 'timeout')
+  const [link] = await readSources(folder)
+  assert.notEqual(link.lastCheckedAt, before, 'the check did run, it just learned nothing better')
+})
+
+test('a conclusive re-check overrides a human verification', async () => {
+  // A page that genuinely dies after being verified must still be caught.
+  const folder = await flaggedCollection()
+  await recordLinkCheck(folder, URL, 'ok', 'human')
+  await recordLinkCheck(folder, URL, 'notfound')
+  const [link] = await readSources(folder)
+  assert.equal(link.linkStatus, 'notfound')
+  assert.equal(link.verifiedBy, 'auto')
+})
+
+test('an automated verdict is freely replaced by another automated one', async () => {
+  const folder = await flaggedCollection()
+  await recordLinkCheck(folder, URL, 'ok')
+  await recordLinkCheck(folder, URL, 'timeout')
+  const [link] = await readSources(folder)
+  assert.equal(link.linkStatus, 'timeout')
+})
+
+test('a capture of a bot wall cannot undo a human verification either', async () => {
+  const folder = await flaggedCollection()
+  await recordLinkCheck(folder, URL, 'ok', 'human')
+  await recordCapture(folder, URL, 'localPath', 'archive/a.mhtml', 'Just a moment...')
+  const [link] = await readSources(folder)
+  assert.equal(link.linkStatus, 'ok')
+  assert.equal(link.verifiedBy, 'human')
+})
+
+test('overridesExisting: conclusive always wins, inconclusive respects a human', () => {
+  const human = { linkStatus: 'ok' as const, verifiedBy: 'human' as const }
+  const auto = { linkStatus: 'ok' as const, verifiedBy: 'auto' as const }
+  const fresh = { linkStatus: '' as const, verifiedBy: '' as const }
+
+  assert.equal(overridesExisting(human, 'notfound'), true)
+  assert.equal(overridesExisting(human, 'redirected'), true)
+  assert.equal(overridesExisting(human, 'ok'), true)
+  assert.equal(overridesExisting(human, 'timeout'), false)
+  assert.equal(overridesExisting(human, 'blocked'), false)
+  assert.equal(overridesExisting(auto, 'timeout'), true)
+  assert.equal(overridesExisting(fresh, 'unreachable'), true)
 })

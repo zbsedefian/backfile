@@ -28,6 +28,7 @@ const COLUMNS = [
   'captured_at',
   'last_checked_at',
   'link_status',
+  'verified_by',
   'found_in',
   'article_source',
   'excluded',
@@ -122,6 +123,7 @@ export function serializeCsv(links: SourceLink[]): string {
       captured_at: link.capturedAt,
       last_checked_at: link.lastCheckedAt,
       link_status: link.linkStatus,
+      verified_by: link.verifiedBy,
       found_in: link.foundIn.join('; '),
       article_source: link.articleSource.join('; '),
       excluded: link.excluded ? 'yes' : '',
@@ -173,6 +175,9 @@ export function rowsToLinks(rows: string[][]): SourceLink[] {
       linkStatus: (LINK_STATUSES.has(at(row, 'link_status')) ? at(row, 'link_status') : '') as
         | LinkStatus
         | '',
+      verifiedBy: (['auto', 'human'].includes(at(row, 'verified_by'))
+        ? at(row, 'verified_by')
+        : '') as SourceLink['verifiedBy'],
       notes: at(row, 'notes'),
       excluded: /^(yes|true|1)$/i.test(at(row, 'excluded')),
       excludedReason: at(row, 'excluded_reason')

@@ -73,7 +73,10 @@ export class VerifySession {
         // This is the branch that makes the feature honest — it is what stops
         // "the reader clicked" from being mistaken for "the page is fine".
         if (!verdict.done) return
-        void recordLinkCheck(articlePath, url, verdict.status)
+        // Recorded as human: a person watched this page come up, which is the
+        // one thing the automated pass can never do — and what stops the next
+        // "Check links" run from quietly undoing it.
+        void recordLinkCheck(articlePath, url, verdict.status, 'human')
           .then(() => done({ status: verdict.status }))
           .catch(() => done({ status: null, reason: 'the result could not be saved' }))
       }

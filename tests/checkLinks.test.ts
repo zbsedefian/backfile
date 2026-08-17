@@ -37,6 +37,7 @@ function link(over: Partial<SourceLink> = {}): SourceLink {
     capturedAt: '',
     lastCheckedAt: '',
     linkStatus: '',
+    verifiedBy: '',
     notes: '',
     excluded: false,
     excludedReason: '',
@@ -182,6 +183,12 @@ test('reads a sources.csv written before the link-check columns existed', () => 
   assert.equal(links.length, 1)
   assert.equal(links[0].lastCheckedAt, '')
   assert.equal(links[0].linkStatus, '')
+  assert.equal(links[0].verifiedBy, '')
+})
+
+test('a verified_by value the app does not recognise is read as unset', () => {
+  const csv = 'url,verified_by\nhttps://example.com/a,somebody-else\n'
+  assert.equal(rowsToLinks(parseCsv(csv))[0].verifiedBy, '')
 })
 
 test('a link_status value the app does not recognise is read as unchecked', () => {
