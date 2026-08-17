@@ -154,9 +154,16 @@ async function captureToFile(
         settled = true
         clearTimeout(timer)
         if (domReadyTimer) clearTimeout(domReadyTimer)
-        win.webContents.removeListener('did-finish-load', onFinish)
-        win.webContents.removeListener('did-fail-load', onFail)
-        win.webContents.removeListener('dom-ready', onDomReady)
+        // Guarded because Stop gets here first: the abort handler destroys the
+        // window, and the load it was waiting on then rejects straight into
+        // this function. Reading .webContents off a destroyed window throws,
+        // and on the timer path it throws inside a setTimeout callback where
+        // nothing can catch it — which surfaced as errors on pressing Stop.
+        if (!win.isDestroyed()) {
+          win.webContents.removeListener('did-finish-load', onFinish)
+          win.webContents.removeListener('did-fail-load', onFail)
+          win.webContents.removeListener('dom-ready', onDomReady)
+        }
         err ? reject(err) : resolve()
       }
       const onFinish = (): void => done()
@@ -309,9 +316,14 @@ export async function probeViaChromium(
         settled = true
         clearTimeout(timer)
         if (settleTimer) clearTimeout(settleTimer)
-        win.webContents.removeListener('did-navigate', onNavigate)
-        win.webContents.removeListener('did-fail-load', onFail)
-        win.webContents.removeListener('did-stop-loading', onStop)
+        // Same hazard as captureToFile above: Stop destroys the window while
+        // the settle timer is still pending, and touching webContents then
+        // throws out of a callback nothing is watching.
+        if (!win.isDestroyed()) {
+          win.webContents.removeListener('did-navigate', onNavigate)
+          win.webContents.removeListener('did-fail-load', onFail)
+          win.webContents.removeListener('did-stop-loading', onStop)
+        }
         resolve(probe)
       }
 

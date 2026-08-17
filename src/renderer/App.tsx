@@ -536,9 +536,7 @@ export function App(): JSX.Element {
         // Its own count, and its own wording: this pass is slower per source
         // and covers only the few the quick pass could not settle, so reusing
         // the first pass's numbers made a working run look finished.
-        setStatus(
-          `${p.done}/${p.total} · re-checking in a browser (slower — these need a real page load)`
-        )
+        setStatus(`${p.done}/${p.total} · re-checking in a browser: ${p.url}`)
         if (p.status && selectedPath) void refreshSources(selectedPath)
       }
     })
