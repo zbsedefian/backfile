@@ -91,8 +91,6 @@ interface Props {
   onViewLocal: (relativePath: string) => void
   /** A downloaded video opens with whatever the OS plays media files with. */
   onOpenLocal: (relativePath: string) => void
-  /** A human looked at a flagged source themselves and it's fine — clears the flag. */
-  onResolveLinkCheck: (url: string) => void
   sort: Sort
   onSortChange: (sort: Sort) => void
   /** Non-empty when a search is filtering the list, for a truthful empty state. */
@@ -136,7 +134,6 @@ export function SourceTable({
   onOpenExternal,
   onViewLocal,
   onOpenLocal,
-  onResolveLinkCheck,
   sort,
   onSortChange,
   query,
@@ -279,29 +276,29 @@ export function SourceTable({
                     {outcome === 'gone' && (
                       <button
                         className="pill pill-rotted pill-button"
-                        title="The original URL now returns 404. Click to open it here — if it's actually fine, this clears the flag."
+                        disabled={busy[busyKey(link.url, 'local')]}
+                        title="The original URL now returns 404. Click to try a real local capture — a genuine page load gets through most bot walls the original check couldn't, and clears this flag if it actually loads."
                         onClick={(e) => {
                           e.stopPropagation()
-                          onOpen(link.url)
-                          onResolveLinkCheck(link.url)
+                          onCapture(link.url, 'local')
                         }}
                       >
-                        NOT FOUND
+                        {busy[busyKey(link.url, 'local')] ? 'checking…' : 'NOT FOUND'}
                       </button>
                     )}
                     {outcome === 'unverified' && (
                       <button
                         className="pill pill-unverified pill-button"
+                        disabled={busy[busyKey(link.url, 'local')]}
                         title={`${
                           UNVERIFIED_LABEL[link.linkStatus] ?? 'Could not confirm this page still resolves.'
-                        } Click to open it here — if it's actually fine, this clears the flag.`}
+                        } Click to try a real local capture — a genuine page load gets through most bot walls the original check couldn't, and clears this flag if it actually loads.`}
                         onClick={(e) => {
                           e.stopPropagation()
-                          onOpen(link.url)
-                          onResolveLinkCheck(link.url)
+                          onCapture(link.url, 'local')
                         }}
                       >
-                        unverified
+                        {busy[busyKey(link.url, 'local')] ? 'checking…' : 'unverified'}
                       </button>
                     )}
                     <CopyLinkButton url={link.url} />
