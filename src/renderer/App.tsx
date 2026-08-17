@@ -713,6 +713,50 @@ export function App(): JSX.Element {
     [selected, patchArticle, capture]
   )
 
+  const [verifyingUrl, setVerifyingUrl] = useState<string | null>(null)
+
+  /**
+   * Verify a flagged source by hand: it opens in the pane, the journalist
+   * clears whatever check is in the way, and Backfile records what actually
+   * came up. The automated pass cannot do this — a bot wall answers it the
+   * same way every time — so this is the only route from `unverified` to a
+   * settled answer, in either direction.
+   */
+  const verifyLink = useCallback(
+    async (url: string) => {
+      if (!selected) return
+      setVerifyingUrl(url)
+      // The instruction points at the pane, so the pane had better be visible —
+      // same reasoning as an archive.is capture waiting on a CAPTCHA.
+      setPaneOpen(true)
+      setStatus(
+        'Opening the source below. Clear any “verify you are human” check it shows — ' +
+          'Backfile records the result once the real page loads.'
+      )
+      try {
+        const outcome = await window.backfile.verifyLink(selected.path, url)
+        setStatus(
+          outcome.status === 'ok'
+            ? 'Verified: the page loaded. Flag cleared.'
+            : outcome.status === 'notfound'
+              ? 'Confirmed gone: the page returns “not found”.'
+              : outcome.status === 'redirected'
+                ? 'Confirmed: it redirects to the site’s homepage — the page itself is gone.'
+                : outcome.status
+                  ? `Confirmed: the site answers with an error (${outcome.status}).`
+                  : `Not verified — ${outcome.reason ?? 'nothing was confirmed'}. Left as it was.`
+        )
+        await refreshSources(selected.path)
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        setStatus(`Could not verify: ${message}`)
+      } finally {
+        setVerifyingUrl(null)
+      }
+    },
+    [selected, refreshSources]
+  )
+
   const [confirmingBulk, setConfirmingBulk] = useState(false)
 
   /** Remove everything currently listed. Only offered from the orphaned view. */
@@ -1803,6 +1847,8 @@ export function App(): JSX.Element {
                 onOpenExternal={openExternal}
                 onViewLocal={viewLocal}
                 onOpenLocal={openLocal}
+                onVerify={verifyLink}
+                verifyingUrl={verifyingUrl}
                 emptyHint={emptyHint}
                 sourceColWidth={sourceColWidth}
                 onSourceColWidthChange={(w) => setSourceColWidth(clamp(w, 200, 720))}

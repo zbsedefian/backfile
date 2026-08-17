@@ -36,8 +36,19 @@ interface Tab {
   title: string
   url: string
   loading: boolean
+  /** HTTP status of the last main-frame navigation, when one was reported. */
+  status: number | null
   /** Set when broken out; the view then belongs to this window instead. */
   window: BrowserWindow | null
+}
+
+/** A tab that has finished loading, reported once it is done settling. */
+export interface SettledPage {
+  tabId: string
+  url: string
+  title: string
+  /** Null when the navigation reported no status — an in-page hop, say. */
+  httpStatus: number | null
 }
 
 const HIDDEN: Bounds = { x: 0, y: 0, width: 0, height: 0 }
@@ -52,6 +63,17 @@ export class BrowserPane {
 
   /** Notified whenever any tab navigates, so captures can be auto-detected. */
   navigationListeners = new Set<(url: string, tabId: string) => void>()
+
+  /**
+   * Notified once a tab has finished loading, with what actually came up.
+   *
+   * Separate from navigationListeners because a navigation says only where the
+   * tab went, and link verification has to know what it arrived at — the title
+   * and status are what distinguish the real article from the "checking your
+   * browser" wall standing in front of it, and neither is known yet at
+   * did-navigate time.
+   */
+  settleListeners = new Set<(page: SettledPage) => void>()
 
   /**
    * True while a capture run is driving the pane by itself.
@@ -140,7 +162,7 @@ export class BrowserPane {
       }
     })
 
-    const tab: Tab = { id, view, title: '', url, loading: true, window: null }
+    const tab: Tab = { id, view, title: '', url, loading: true, status: null, window: null }
     this.tabs.push(tab)
 
     const wc = view.webContents
@@ -157,13 +179,21 @@ export class BrowserPane {
     wc.on('did-stop-loading', () => {
       tab.loading = false
       touch()
+      for (const listener of this.settleListeners) {
+        listener({ tabId: id, url: tab.url, title: tab.title, httpStatus: tab.status })
+      }
     })
     const announce = (to: string): void => {
       tab.url = to
       for (const listener of this.navigationListeners) listener(to, id)
       this.emitTabs()
     }
-    wc.on('did-navigate', (_e, to) => announce(to))
+    wc.on('did-navigate', (_e, to, httpResponseCode) => {
+      // Only a real main-frame navigation carries a status; the in-page hop
+      // below deliberately leaves the last one standing.
+      tab.status = typeof httpResponseCode === 'number' ? httpResponseCode : null
+      announce(to)
+    })
     wc.on('did-redirect-navigation', (_e, to) => announce(to))
     wc.on('did-navigate-in-page', (_e, to, isMainFrame) => {
       if (isMainFrame) announce(to)

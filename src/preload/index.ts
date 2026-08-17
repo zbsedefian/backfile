@@ -17,6 +17,7 @@ import type {
 } from '../shared/types'
 import type { BatchProgress } from '../main/capture/batch'
 import type { CheckProgress } from '../main/health/checkLinks'
+import type { VerifyOutcome } from '../main/health/verifySession'
 import type { Bounds, TabInfo } from '../main/browser/BrowserPane'
 import type { RewritePlan, RewriteResult } from '../main/docx/rewriteLinks'
 // Imported rather than redeclared: a hand-copied duplicate of this shape had
@@ -92,6 +93,14 @@ const api = {
     ipcRenderer.invoke('health:checkLinks', articlePath, urls),
   cancelLinkCheck: (articlePath: string): Promise<void> =>
     ipcRenderer.invoke('health:cancel', articlePath),
+  /**
+   * Open a flagged source in the pane and watch what actually comes up, so a
+   * human can clear a bot check the automated pass could never get past.
+   * Resolves once the page is judged, or with a null status if it never was.
+   */
+  verifyLink: (articlePath: string, url: string): Promise<VerifyOutcome> =>
+    ipcRenderer.invoke('health:verify', articlePath, url),
+  cancelVerifyLink: (): Promise<void> => ipcRenderer.invoke('health:cancelVerify'),
   onLinkCheckProgress: (handler: (p: CheckProgress) => void): (() => void) => {
     const listener = (_e: unknown, p: CheckProgress): void => handler(p)
     ipcRenderer.on('health:progress', listener)

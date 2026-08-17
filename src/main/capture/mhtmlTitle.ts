@@ -64,16 +64,29 @@ function decodeQuotedPrintable(text: string): string {
 }
 
 /**
+ * The title a bot check, a cookie wall or an error page hands back in place of
+ * the real headline.
+ *
+ * Shared with link verification in ../health/verifyPage: the question "is this
+ * the actual page, or the wall in front of it?" is the same one whether it is
+ * being asked of a saved capture or of a live tab a journalist is looking at,
+ * and two copies of this list would drift apart.
+ */
+const PLACEHOLDER_TITLE =
+  /^(just a moment|attention required|access denied|are you a robot|error|not found|403 forbidden|redirecting|loading|one moment|please wait|security check|verify you are human)\b/i
+
+export function isPlaceholderTitle(title: string): boolean {
+  return PLACEHOLDER_TITLE.test(title.replace(/\s+/g, ' ').trim())
+}
+
+/**
  * Titles are noisy: publishers append their own name, and a capture of a
  * cookie wall or an error page is worse than no title at all.
  */
 function tidy(title: string): string {
   const clean = title.replace(/\s+/g, ' ').trim()
   if (clean.length === 0 || clean.length > 300) return ''
-
-  const junk =
-    /^(just a moment|attention required|access denied|are you a robot|error|not found|403 forbidden|redirecting|loading|one moment|please wait|security check|verify you are human)\b/i
-  if (junk.test(clean)) return ''
+  if (isPlaceholderTitle(clean)) return ''
   return clean
 }
 

@@ -91,6 +91,13 @@ interface Props {
   onViewLocal: (relativePath: string) => void
   /** A downloaded video opens with whatever the OS plays media files with. */
   onOpenLocal: (relativePath: string) => void
+  /**
+   * Open a flagged source in the pane so a human can clear whatever check is
+   * in the way; Backfile then records what actually loaded.
+   */
+  onVerify: (url: string) => void
+  /** The one source currently being verified, if any — only one at a time. */
+  verifyingUrl: string | null
   sort: Sort
   onSortChange: (sort: Sort) => void
   /** Non-empty when a search is filtering the list, for a truthful empty state. */
@@ -134,6 +141,8 @@ export function SourceTable({
   onOpenExternal,
   onViewLocal,
   onOpenLocal,
+  onVerify,
+  verifyingUrl,
   sort,
   onSortChange,
   query,
@@ -276,29 +285,29 @@ export function SourceTable({
                     {outcome === 'gone' && (
                       <button
                         className="pill pill-rotted pill-button"
-                        disabled={busy[busyKey(link.url, 'local')]}
-                        title="The original URL now returns 404. Click to try a real local capture — a genuine page load gets through most bot walls the original check couldn't, and clears this flag if it actually loads."
+                        disabled={verifyingUrl !== null}
+                        title="The original URL returns “not found”. Click to open it below and see for yourself — Backfile records whatever actually loads."
                         onClick={(e) => {
                           e.stopPropagation()
-                          onCapture(link.url, 'local')
+                          onVerify(link.url)
                         }}
                       >
-                        {busy[busyKey(link.url, 'local')] ? 'checking…' : 'NOT FOUND'}
+                        {verifyingUrl === link.url ? 'verifying…' : 'NOT FOUND'}
                       </button>
                     )}
                     {outcome === 'unverified' && (
                       <button
                         className="pill pill-unverified pill-button"
-                        disabled={busy[busyKey(link.url, 'local')]}
+                        disabled={verifyingUrl !== null}
                         title={`${
                           UNVERIFIED_LABEL[link.linkStatus] ?? 'Could not confirm this page still resolves.'
-                        } Click to try a real local capture — a genuine page load gets through most bot walls the original check couldn't, and clears this flag if it actually loads.`}
+                        } Click to open it below — clear any human check it shows, and Backfile records whatever actually loads.`}
                         onClick={(e) => {
                           e.stopPropagation()
-                          onCapture(link.url, 'local')
+                          onVerify(link.url)
                         }}
                       >
-                        {busy[busyKey(link.url, 'local')] ? 'checking…' : 'unverified'}
+                        {verifyingUrl === link.url ? 'verifying…' : 'unverified'}
                       </button>
                     )}
                     <CopyLinkButton url={link.url} />

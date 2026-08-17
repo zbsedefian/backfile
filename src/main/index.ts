@@ -26,6 +26,7 @@ import {
 import { adapterFor } from './capture'
 import { BatchRunner } from './capture/batch'
 import { LinkCheckRunner } from './health/checkLinks'
+import { VerifySession, type VerifyOutcome } from './health/verifySession'
 import { FEATURES } from '../shared/features'
 import { browserPane, Bounds } from './browser/BrowserPane'
 import { buildMenu } from './menu'
@@ -526,6 +527,31 @@ function registerIpc(): void {
 
   ipcMain.handle('health:cancel', async (_e, articlePath: string): Promise<void> => {
     activeHealthRuns.get(articlePath)?.cancel()
+  })
+
+  /**
+   * One verification at a time, app-wide: it is driven by a human answering a
+   * check in the pane, and there is only one of those to go round.
+   */
+  let activeVerify: VerifySession | null = null
+
+  ipcMain.handle(
+    'health:verify',
+    async (_e, articlePath: string, url: string): Promise<VerifyOutcome> => {
+      if (!FEATURES.linkHealth) throw new Error('link checking is not enabled')
+      if (activeVerify) throw new Error('a link is already being verified')
+      const session = new VerifySession()
+      activeVerify = session
+      try {
+        return await session.run(articlePath, url)
+      } finally {
+        activeVerify = null
+      }
+    }
+  )
+
+  ipcMain.handle('health:cancelVerify', async (): Promise<void> => {
+    activeVerify?.cancel()
   })
 
   // Routed through main rather than the renderer's own navigator.clipboard so
