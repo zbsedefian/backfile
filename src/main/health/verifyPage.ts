@@ -18,7 +18,26 @@
 
 import { LinkStatus } from '../../shared/types'
 import { isPlaceholderTitle } from '../capture/mhtmlTitle'
-import { isBareHomepage } from './checkLinks'
+
+/**
+ * A redirect that lands on nothing but the domain — no path, no query — is
+ * the shape a removed or reorganised article takes almost every time: the
+ * publisher's server still answers, it just has nothing left to say about
+ * this specific page. A redirect that lands somewhere more specific (a new
+ * slug, an https upgrade, a www-stripped host) is still the same article and
+ * counts as resolving fine.
+ *
+ * Lives here rather than in checkLinks.ts because both the plain HTTP check
+ * and the judging below need it, and the other direction would be a cycle.
+ */
+export function isBareHomepage(url: string): boolean {
+  try {
+    const u = new URL(url)
+    return (u.pathname === '' || u.pathname === '/') && u.search === ''
+  } catch {
+    return false
+  }
+}
 
 export interface SettledInput {
   /** The source's original URL, as recorded in sources.csv. */

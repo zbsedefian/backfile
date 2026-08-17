@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { ServiceId, SourceLink } from '../../shared/types'
+import { describeAge, isStaleCheck } from '../../shared/age'
 import { TierBadge } from './Tier'
 
 interface Props {
@@ -340,6 +341,28 @@ export function DetailPane({
         <div className="detail-block">
           <div className="detail-label">Last capture</div>
           <div className="detail-value mono small">{link.capturedAt}</div>
+        </div>
+      )}
+
+      {link.lastCheckedAt && (
+        <div className="detail-block">
+          <div className="detail-label">Link checked</div>
+          <div className="detail-value small">
+            <span className="mono">{link.lastCheckedAt.slice(0, 10)}</span>{' '}
+            <span className={isStaleCheck(link.lastCheckedAt) ? 'warn' : 'muted'}>
+              ({describeAge(link.lastCheckedAt)})
+            </span>
+            {/* Said out loud because a hand verification is the one kind that
+                cannot refresh itself: the wall that made it necessary answers
+                every future automated check exactly the same way, so its age
+                is the only thing that distinguishes it from a fresh result. */}
+            {link.verifiedBy === 'human' && (
+              <div className="muted small">
+                Verified by hand. Automated re-checks will not overturn this
+                unless the page has genuinely gone.
+              </div>
+            )}
+          </div>
         </div>
       )}
 

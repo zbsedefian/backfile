@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { checkOne, isBareHomepage } from '../src/main/health/checkLinks'
+import { checkOne, isBareHomepage, isConclusive } from '../src/main/health/checkLinks'
 import { parseCsv, rowsToLinks, serializeCsv } from '../src/main/sources/csv'
-import type { SourceLink } from '../src/shared/types'
+import type { LinkStatus, SourceLink } from '../src/shared/types'
 
 const realFetch = globalThis.fetch
 
@@ -195,4 +195,24 @@ test('a link_status value the app does not recognise is read as unchecked', () =
   const csv = 'url,link_status,last_checked_at\nhttps://example.com/a,not-a-real-status,2026-08-17 12:00:00\n'
   const links = rowsToLinks(parseCsv(csv))
   assert.equal(links[0].linkStatus, '')
+})
+
+test('a 403 is left inconclusive for the browser pass rather than judged here', async (t) => {
+  // Bot detection answers the plain request with 403 far more often than a
+  // page is genuinely forbidden, so the cheap pass no longer tries to rule on
+  // it — the browser retry does, using the same judge as human verification.
+  mockFetch(t, (async () => response({ status: 403 })) as typeof fetch)
+  const status = await checkOne('https://example.com/walled', new AbortController().signal)
+  assert.equal(status, 'servererror')
+  assert.equal(isConclusive(status as LinkStatus), false, 'must be eligible for escalation')
+})
+
+test('isConclusive: only outcomes a wall cannot manufacture', () => {
+  assert.equal(isConclusive('ok'), true)
+  assert.equal(isConclusive('notfound'), true)
+  assert.equal(isConclusive('redirected'), true)
+  assert.equal(isConclusive('servererror'), false)
+  assert.equal(isConclusive('timeout'), false)
+  assert.equal(isConclusive('unreachable'), false)
+  assert.equal(isConclusive('blocked'), false)
 })

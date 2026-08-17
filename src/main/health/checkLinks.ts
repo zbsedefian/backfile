@@ -14,7 +14,8 @@ import { LinkStatus, SourceLink } from '../../shared/types'
 import { readSources, writeSources } from '../sources/csv'
 import { withLock } from '../sources/lock'
 import { runQueue, QueueOutcome } from '../capture/batch'
-import { CHROME_UA, checkViaChromium } from '../capture/local'
+import { CHROME_UA, probeViaChromium } from '../capture/local'
+import { classifySettledPage, isBareHomepage } from './verifyPage'
 
 const REQUEST_TIMEOUT_MS = 12_000
 
@@ -24,6 +25,12 @@ const REQUEST_TIMEOUT_MS = 12_000
  * load, so this can afford to run more of them at once.
  */
 const CONCURRENCY = 6
+/**
+ * The browser retry pass runs far narrower. Each one is a real Chromium
+ * window rather than a socket, so this is held near the local-capture limit
+ * for the same reason: memory and CPU, not politeness to any one host.
+ */
+const BROWSER_CONCURRENCY = 2
 /** No pause needed: unlike archive.is or Wayback, there is no shared server here to overwhelm. */
 const GAP_MS = 0
 
@@ -37,25 +44,14 @@ export interface CheckProgress {
   checked?: number
   /** How many came back not-clean — confirmed gone or merely unverified alike. */
   flagged?: number
+  /** How many needed the slower browser retry after the plain pass. */
+  escalated?: number
   detail?: string
 }
 
-/**
- * A redirect that lands on nothing but the domain — no path, no query — is
- * the shape a removed or reorganised article takes almost every time: the
- * publisher's server still answers, it just has nothing left to say about
- * this specific page. A redirect that lands somewhere more specific (a new
- * slug, an https upgrade, a www-stripped host) is still the same article and
- * counts as resolving fine.
- */
-export function isBareHomepage(url: string): boolean {
-  try {
-    const u = new URL(url)
-    return (u.pathname === '' || u.pathname === '/') && u.search === ''
-  } catch {
-    return false
-  }
-}
+// Defined next door with the rest of the page-judging rules; re-exported here
+// because this is the module link health is reached through.
+export { isBareHomepage } from './verifyPage'
 
 async function plainRequest(
   url: string,
@@ -97,23 +93,42 @@ export async function checkOne(
     return 'unreachable'
   }
 
-  if (res.status === 403) {
-    // A 403 from a plain request is usually bot-detection, not link rot — see
-    // this file's own doc comment. Ask a real browser instead of trusting it.
-    const code = await checkViaChromium(url, parentSignal).catch(() => null)
-    if (parentSignal.aborted) return 'cancelled'
-    if (code === null) return 'unreachable'
-    if (code === 404) return 'notfound'
-    if (code >= 200 && code < 300) return 'ok'
-    return 'servererror'
-  }
-
   if (res.ok) {
     if (res.redirected && isBareHomepage(res.url)) return 'redirected'
     return 'ok'
   }
   if (res.status === 404) return 'notfound'
   return 'servererror'
+}
+
+/**
+ * Retry one URL in a real browser, for results the cheap pass could not settle.
+ *
+ * Most inconclusive results are not CAPTCHAs at all — they are pages that need
+ * JavaScript, servers that sniff the user agent, or hosts that simply dislike
+ * HEAD requests, and a genuine Chromium load walks through every one of them.
+ * Running this over just the leftovers is what keeps the cost bounded: the
+ * expensive path touches a handful of sources rather than hundreds.
+ *
+ * Judged by exactly the same rules a human verification is judged by, so
+ * "Backfile watched the page load" means one thing in this app rather than
+ * two. Returns null when it still cannot tell — a real CAPTCHA, a wall that
+ * never clears — which leaves the cheap pass's verdict standing and the source
+ * waiting for a person.
+ */
+export async function recheckViaBrowser(
+  url: string,
+  signal: AbortSignal
+): Promise<LinkStatus | null> {
+  const probe = await probeViaChromium(url, signal).catch(() => null)
+  if (!probe || signal.aborted) return null
+  const verdict = classifySettledPage({
+    originalUrl: url,
+    finalUrl: probe.finalUrl,
+    title: probe.title,
+    httpStatus: probe.httpStatus
+  })
+  return verdict.done ? verdict.status : null
 }
 
 /**
@@ -209,15 +224,23 @@ export class LinkCheckRunner {
   ): Promise<CheckProgress> {
     const queue = LinkCheckRunner.pending(links)
     let done = 0
-    let flagged = 0
+    const results = new Map<string, LinkStatus>()
 
-    const runOne = async (link: SourceLink): Promise<QueueOutcome> => {
+    const cancelControls = {
+      isCancelled: () => this.cancelled,
+      markCancelled: (): void => {
+        this.cancelled = true
+      }
+    }
+
+    // Pass one: a plain request for every source. Cheap enough for hundreds.
+    const checkPlainly = async (link: SourceLink): Promise<QueueOutcome> => {
       onProgress({ done, total: queue.length, url: link.url, phase: 'checking' })
       const status = await checkOne(link.url, this.aborter.signal)
       if (status === 'cancelled') return 'cancelled'
       await recordLinkCheck(articlePath, link.url, status)
+      results.set(link.url, status)
       done++
-      if (status !== 'ok') flagged++
       onProgress({ done, total: queue.length, url: link.url, phase: 'checked', status })
       return 'ok'
     }
@@ -226,12 +249,55 @@ export class LinkCheckRunner {
       items: queue,
       concurrency: CONCURRENCY,
       gapMs: GAP_MS,
-      isCancelled: () => this.cancelled,
-      markCancelled: () => {
-        this.cancelled = true
-      },
-      runOne
+      ...cancelControls,
+      runOne: checkPlainly
     })
+
+    /*
+     * Pass two: whatever the cheap pass could not settle, retried in a real
+     * browser. Deliberately scoped to the leftovers — that is what keeps a
+     * headless window per source affordable, and it is where nearly all the
+     * false "this source is rotten" readings were coming from.
+     */
+    const stubborn = queue.filter((l) => {
+      const status = results.get(l.url)
+      return status !== undefined && !isConclusive(status)
+    })
+    let escalated = 0
+
+    const checkInBrowser = async (link: SourceLink): Promise<QueueOutcome> => {
+      if (this.cancelled) return 'cancelled'
+      onProgress({
+        done,
+        total: queue.length,
+        url: link.url,
+        phase: 'checking',
+        detail: 'retrying in a browser'
+      })
+      const status = await recheckViaBrowser(link.url, this.aborter.signal)
+      if (this.cancelled) return 'cancelled'
+      escalated++
+      // Null means it is still behind something only a person can clear, so
+      // the plain verdict already recorded stands.
+      if (status) {
+        await recordLinkCheck(articlePath, link.url, status)
+        results.set(link.url, status)
+        onProgress({ done, total: queue.length, url: link.url, phase: 'checked', status })
+      }
+      return 'ok'
+    }
+
+    if (stubborn.length > 0 && !this.cancelled) {
+      await runQueue({
+        items: stubborn,
+        concurrency: BROWSER_CONCURRENCY,
+        gapMs: 0,
+        ...cancelControls,
+        runOne: checkInBrowser
+      })
+    }
+
+    const flagged = [...results.values()].filter((s) => s !== 'ok').length
 
     const final: CheckProgress = {
       done,
@@ -240,6 +306,7 @@ export class LinkCheckRunner {
       phase: 'finished',
       checked: done,
       flagged,
+      escalated,
       detail: this.cancelled ? 'Stopped.' : undefined
     }
     onProgress(final)

@@ -26,6 +26,12 @@ export const CHROME_UA =
   '(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
 
 const LOAD_TIMEOUT_MS = 45_000
+/**
+ * How long to let a self-clearing JavaScript challenge finish before reading
+ * the page during a link probe. Cloudflare's non-CAPTCHA interstitial takes a
+ * few seconds to check the browser and navigate on by itself.
+ */
+const CHALLENGE_SETTLE_MS = 5_000
 /** Time after load for lazy images and late scripts to settle before saving. */
 const SETTLE_MS = 2_500
 /**
@@ -245,17 +251,33 @@ export const localAdapter: CaptureAdapter = {
   }
 }
 
+/** What a headless load actually found, for the link checker to judge. */
+export interface BrowserProbe {
+  /** Status of the last main-frame navigation, when one was reported. */
+  httpStatus: number | null
+  /** Where it ended up, after any redirects and any self-clearing challenge. */
+  finalUrl: string
+  /** The page's own title once it settled. */
+  title: string
+}
+
 /**
- * Load a URL in a hidden Chromium window and read back the HTTP status of the
- * main-frame navigation.
+ * Load a URL in a hidden Chromium window and report what came up.
  *
- * Used only as a fallback by the link-rot checker in ../health/checkLinks —
- * a plain HTTP request gets 403 from the same bot-detection this file's own
- * doc comment describes, and that 403 means "not a browser," not "the page is
- * gone." Every other status a plain request gets back is already trustworthy,
- * so nothing else pays for a real window.
+ * The escalation path for the link checker in ../health/checkLinks: a plain
+ * HTTP request is turned away by the same bot detection this file's own doc
+ * comment describes, and most of those refusals mean "not a browser" rather
+ * than "the page is gone". A real window runs the page's JavaScript, carries
+ * a real user agent, and gets through everything short of an actual CAPTCHA.
+ *
+ * Reports the title and final URL as well as the status because the status
+ * alone cannot tell an article from a challenge page — Cloudflare serves its
+ * interstitial as a perfectly ordinary 403 or 503.
  */
-export async function checkViaChromium(url: string, signal?: AbortSignal): Promise<number | null> {
+export async function probeViaChromium(
+  url: string,
+  signal?: AbortSignal
+): Promise<BrowserProbe | null> {
   const win = new BrowserWindow({
     show: false,
     webPreferences: {
@@ -277,19 +299,27 @@ export async function checkViaChromium(url: string, signal?: AbortSignal): Promi
     if (signal?.aborted) return null
     win.webContents.setUserAgent(CHROME_UA)
 
-    return await new Promise<number | null>((resolve) => {
+    return await new Promise<BrowserProbe | null>((resolve) => {
       let settled = false
-      const done = (code: number | null): void => {
+      let status: number | null = null
+      let settleTimer: NodeJS.Timeout | null = null
+
+      const done = (probe: BrowserProbe | null): void => {
         if (settled) return
         settled = true
         clearTimeout(timer)
+        if (settleTimer) clearTimeout(settleTimer)
         win.webContents.removeListener('did-navigate', onNavigate)
         win.webContents.removeListener('did-fail-load', onFail)
-        resolve(code)
+        win.webContents.removeListener('did-stop-loading', onStop)
+        resolve(probe)
       }
+
       const timer = setTimeout(() => done(null), LOAD_TIMEOUT_MS)
-      const onNavigate = (_e: unknown, _navUrl: string, httpResponseCode: number): void =>
-        done(httpResponseCode)
+
+      const onNavigate = (_e: unknown, _navUrl: string, httpResponseCode: number): void => {
+        status = typeof httpResponseCode === 'number' ? httpResponseCode : null
+      }
       const onFail = (
         _e: unknown,
         code: number,
@@ -299,8 +329,28 @@ export async function checkViaChromium(url: string, signal?: AbortSignal): Promi
       ): void => {
         if (isRealLoadFailure(code, isMainFrame)) done(null)
       }
+      /**
+       * A JavaScript challenge clears itself by navigating again a few seconds
+       * after its interstitial finishes loading. Reading the page the instant
+       * loading first stops would therefore report the wall for every walled
+       * site — the pause is what lets the real article arrive, and the state is
+       * read live afterwards so it reflects wherever the challenge landed.
+       */
+      const onStop = (): void => {
+        if (settleTimer) clearTimeout(settleTimer)
+        settleTimer = setTimeout(() => {
+          if (win.isDestroyed()) return done(null)
+          done({
+            httpStatus: status,
+            finalUrl: win.webContents.getURL(),
+            title: win.webContents.getTitle()
+          })
+        }, CHALLENGE_SETTLE_MS)
+      }
+
       win.webContents.on('did-navigate', onNavigate)
       win.webContents.on('did-fail-load', onFail)
+      win.webContents.on('did-stop-loading', onStop)
       win.loadURL(url).catch(() => done(null))
     })
   } finally {

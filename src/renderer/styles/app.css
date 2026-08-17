@@ -1040,6 +1040,10 @@ body {
 .ok {
   color: var(--ok);
 }
+/* An old link check: not wrong, just no longer fresh enough to lean on. */
+.warn {
+  color: color-mix(in srgb, var(--danger) 70%, var(--text-faint));
+}
 .small {
   font-size: 11px;
 }

@@ -522,7 +522,9 @@ export function App(): JSX.Element {
         setStatus(
           p.detail === 'Stopped.'
             ? `Link check stopped — ${p.checked ?? 0} checked.`
-            : `Link check done: ${p.checked ?? 0} checked, ${p.flagged ?? 0} flagged.`
+            : `Link check done: ${p.checked ?? 0} checked${
+                p.escalated ? `, ${p.escalated} retried in a browser` : ''
+              }, ${p.flagged ?? 0} flagged.`
         )
         if (selectedPath) void refreshSources(selectedPath)
         return
