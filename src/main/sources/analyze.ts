@@ -89,6 +89,8 @@ export async function analyzeArticle(
         knownArchiveIs || knownWayback
           ? new Date().toISOString().slice(0, 19).replace('T', ' ')
           : '',
+      lastCheckedAt: '',
+      linkStatus: '',
       notes: '',
       // Pre-excluding DOI and repository links keeps the work queue honest:
       // they are already permanent, and chasing snapshots for them is busywork.

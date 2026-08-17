@@ -25,6 +25,8 @@ import {
 } from './sources/manual'
 import { adapterFor } from './capture'
 import { BatchRunner } from './capture/batch'
+import { LinkCheckRunner } from './health/checkLinks'
+import { FEATURES } from '../shared/features'
 import { browserPane, Bounds } from './browser/BrowserPane'
 import { buildMenu } from './menu'
 import { planDocxRewrite, rewriteDocxLinks } from './docx/rewriteLinks'
@@ -482,6 +484,43 @@ function registerIpc(): void {
   ipcMain.handle('capture:skip', async (_e, service?: ServiceId): Promise<void> => {
     if (service) activeBatches.get(service)?.skip()
     else for (const runner of activeBatches.values()) runner.skip()
+  })
+
+  /**
+   * One run per article — there is nothing to parallelise a second run
+   * against, unlike captures which split by service.
+   *
+   * Gated on FEATURES.linkHealth so this can be switched off for a paid tier
+   * later without touching the handler itself.
+   */
+  const activeHealthRuns = new Map<string, LinkCheckRunner>()
+
+  ipcMain.handle(
+    'health:checkLinks',
+    async (event, articlePath: string, urls?: string[]): Promise<void> => {
+      if (!FEATURES.linkHealth) throw new Error('link checking is not enabled')
+      if (activeHealthRuns.has(articlePath)) {
+        throw new Error('a link check is already running for this article')
+      }
+      const runner = new LinkCheckRunner()
+      activeHealthRuns.set(articlePath, runner)
+      try {
+        const all = await readSources(articlePath)
+        // Same reasoning as capture:batch: an empty selection means "check
+        // nothing," not "check everything."
+        const wanted = urls ? new Set(urls) : null
+        const links = wanted ? all.filter((l) => wanted.has(l.url)) : all
+        await runner.run(articlePath, links, (progress) => {
+          if (!event.sender.isDestroyed()) event.sender.send('health:progress', progress)
+        })
+      } finally {
+        activeHealthRuns.delete(articlePath)
+      }
+    }
+  )
+
+  ipcMain.handle('health:cancel', async (_e, articlePath: string): Promise<void> => {
+    activeHealthRuns.get(articlePath)?.cancel()
   })
 
   // Routed through main rather than the renderer's own navigator.clipboard so

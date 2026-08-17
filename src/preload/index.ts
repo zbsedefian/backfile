@@ -16,6 +16,7 @@ import type {
   SourceLink
 } from '../shared/types'
 import type { BatchProgress } from '../main/capture/batch'
+import type { CheckProgress } from '../main/health/checkLinks'
 import type { Bounds, TabInfo } from '../main/browser/BrowserPane'
 import type { RewritePlan, RewriteResult } from '../main/docx/rewriteLinks'
 // Imported rather than redeclared: a hand-copied duplicate of this shape had
@@ -85,6 +86,16 @@ const api = {
     const listener = (_e: unknown, p: BatchProgress): void => handler(p)
     ipcRenderer.on('capture:progress', listener)
     return () => ipcRenderer.removeListener('capture:progress', listener)
+  },
+  /** `urls` narrows the run to a selection; omitted, it covers the article. */
+  checkLinks: (articlePath: string, urls?: string[]): Promise<void> =>
+    ipcRenderer.invoke('health:checkLinks', articlePath, urls),
+  cancelLinkCheck: (articlePath: string): Promise<void> =>
+    ipcRenderer.invoke('health:cancel', articlePath),
+  onLinkCheckProgress: (handler: (p: CheckProgress) => void): (() => void) => {
+    const listener = (_e: unknown, p: CheckProgress): void => handler(p)
+    ipcRenderer.on('health:progress', listener)
+    return () => ipcRenderer.removeListener('health:progress', listener)
   },
   copyText: (text: string): Promise<void> => ipcRenderer.invoke('clipboard:writeText', text),
   openExternal: (url: string): Promise<void> => ipcRenderer.invoke('shell:openExternal', url),

@@ -10,7 +10,7 @@
 
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
-import { SourceLink, tierOf } from '../../shared/types'
+import { LinkStatus, SourceLink, tierOf } from '../../shared/types'
 
 export const SOURCES_FILENAME = 'sources.csv'
 
@@ -26,12 +26,23 @@ const COLUMNS = [
   'video_path',
   'screenshot_path',
   'captured_at',
+  'last_checked_at',
+  'link_status',
   'found_in',
   'article_source',
   'excluded',
   'excluded_reason',
   'notes'
 ] as const
+
+const LINK_STATUSES: ReadonlySet<string> = new Set<LinkStatus>([
+  'ok',
+  'redirected',
+  'notfound',
+  'servererror',
+  'timeout',
+  'unreachable'
+])
 
 const TIER_LABEL: Record<string, string> = {
   none: '',
@@ -108,6 +119,8 @@ export function serializeCsv(links: SourceLink[]): string {
       video_path: link.videoPath,
       screenshot_path: link.screenshotPath,
       captured_at: link.capturedAt,
+      last_checked_at: link.lastCheckedAt,
+      link_status: link.linkStatus,
       found_in: link.foundIn.join('; '),
       article_source: link.articleSource.join('; '),
       excluded: link.excluded ? 'yes' : '',
@@ -153,6 +166,12 @@ export function rowsToLinks(rows: string[][]): SourceLink[] {
       videoPath: at(row, 'video_path'),
       screenshotPath: at(row, 'screenshot_path'),
       capturedAt: at(row, 'captured_at'),
+      lastCheckedAt: at(row, 'last_checked_at'),
+      // A CSV a hand-editor mangled defaults to "unchecked" rather than
+      // carrying a status string the rest of the app does not recognise.
+      linkStatus: (LINK_STATUSES.has(at(row, 'link_status')) ? at(row, 'link_status') : '') as
+        | LinkStatus
+        | '',
       notes: at(row, 'notes'),
       excluded: /^(yes|true|1)$/i.test(at(row, 'excluded')),
       excludedReason: at(row, 'excluded_reason')

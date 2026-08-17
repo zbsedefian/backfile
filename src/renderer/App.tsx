@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { RewritePlan } from '../main/docx/rewriteLinks'
 import type { Article, ArchiveTier, ServiceId, SourceLink } from '../shared/types'
-import { isStranded, ownSources, tierOf } from '../shared/types'
+import { isRotted, isStranded, ownSources, tierOf } from '../shared/types'
+import { FEATURES } from '../shared/features'
 import {
   EMPTY_SELECTION,
   applyArrow,
@@ -38,7 +39,7 @@ import { DEFAULT_TSA_URL } from '../shared/evidence'
  * filter and the tier counts shown next to it are the same control — see the
  * note above the filter bar in the JSX below for why that used to be two.
  */
-type Filter = 'all' | ArchiveTier | 'excluded' | 'orphaned'
+type Filter = 'all' | ArchiveTier | 'excluded' | 'orphaned' | 'rotted'
 
 const SERVICE_LABEL: Record<ServiceId, string> = {
   archiveIs: 'archive.is',
@@ -507,6 +508,26 @@ export function App(): JSX.Element {
     })
   }, [selectedPath, refreshSources, recordFailure])
 
+  const [checkingLinks, setCheckingLinks] = useState(false)
+
+  useEffect(() => {
+    return window.backfile.onLinkCheckProgress((p) => {
+      if (p.phase === 'finished') {
+        setStatus(
+          p.detail === 'Stopped.'
+            ? `Link check stopped — ${p.checked ?? 0} checked.`
+            : `Link check done: ${p.checked ?? 0} checked, ${p.rotted ?? 0} rotted.`
+        )
+        if (selectedPath) void refreshSources(selectedPath)
+        return
+      }
+      if (p.phase === 'checked') {
+        setStatus(`${p.done}/${p.total} · checked ${p.url}`)
+        if (selectedPath) void refreshSources(selectedPath)
+      }
+    })
+  }, [selectedPath, refreshSources])
+
   /**
    * Run one service over the whole article, or over `urls` when a selection
    * narrows it. Either way it goes through the batch runner rather than a loop
@@ -758,6 +779,24 @@ export function App(): JSX.Element {
     [captureAll, articleSources]
   )
 
+  /** "Check links" means all of *this article's* sources — same reasoning as captureArticle above. */
+  const checkLinks = useCallback(async () => {
+    if (!selected) return
+    setCheckingLinks(true)
+    setStatus('Checking links…')
+    try {
+      await window.backfile.checkLinks(
+        selected.path,
+        articleSources.map((l) => l.url)
+      )
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      setStatus(`Could not check links: ${message}`)
+    } finally {
+      setCheckingLinks(false)
+    }
+  }, [selected, articleSources])
+
   const shown = useMemo(() => {
     if (!selected) return []
     const byFilter = selected.sources.filter((l) => {
@@ -770,6 +809,9 @@ export function App(): JSX.Element {
       // genuinely junk. Sources stranded by unticking a document land here too:
       // hidden from the working views, still reachable for removal.
       if (filter === 'orphaned') return l.foundIn.length === 0 || stranded.has(l.url)
+      // Same reasoning as orphaned: a rotted link is kept findable for
+      // cleanup even if the document citing it has since been unticked.
+      if (filter === 'rotted') return isRotted(l)
       if (stranded.has(l.url)) return false
       if (filter === 'all') return true
       // Same precedence as tierCounts below: excluded is checked before tier,
@@ -938,6 +980,11 @@ export function App(): JSX.Element {
 
   const counts = useMemo(
     () => (selected ? tierCounts(articleSources) : null),
+    [selected, articleSources]
+  )
+
+  const rottedCount = useMemo(
+    () => (selected ? articleSources.filter(isRotted).length : 0),
     [selected, articleSources]
   )
 
@@ -1496,6 +1543,15 @@ export function App(): JSX.Element {
                       >
                         Orphaned
                       </button>
+                      {FEATURES.linkHealth && rottedCount > 0 && (
+                        <button
+                          className={`tab${filter === 'rotted' ? ' is-active' : ''}`}
+                          onClick={() => setFilter('rotted')}
+                          title="The original URL no longer resolves to what it once did, per the last link check"
+                        >
+                          Rotted ({rottedCount})
+                        </button>
+                      )}
                     </div>
                   )}
 
@@ -1663,6 +1719,26 @@ export function App(): JSX.Element {
                   >
                     Stop all
                   </button>
+                )}
+
+                {FEATURES.linkHealth && (
+                  checkingLinks ? (
+                    <button
+                      className="btn btn-danger"
+                      onClick={() => selected && void window.backfile.cancelLinkCheck(selected.path)}
+                    >
+                      Stop check
+                    </button>
+                  ) : (
+                    <button
+                      className="btn"
+                      disabled={analyzing || articleSources.length === 0}
+                      onClick={() => void checkLinks()}
+                      title="Request every source's original URL and record whether it still resolves"
+                    >
+                      Check links
+                    </button>
+                  )
                 )}
 
                 <span className="toolbar-divider" />

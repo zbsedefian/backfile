@@ -18,6 +18,8 @@ function link(over: Partial<SourceLink> = {}): SourceLink {
     videoPath: '',
     screenshotPath: '',
     capturedAt: '',
+    lastCheckedAt: '',
+    linkStatus: '',
     notes: '',
     excluded: false,
     excludedReason: '',

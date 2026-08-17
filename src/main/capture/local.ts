@@ -21,7 +21,7 @@ import { CaptureResult } from '../../shared/types'
 /** Captures live beside the article they belong to, never in a global cache. */
 export const CAPTURE_DIRNAME = 'archive'
 
-const CHROME_UA =
+export const CHROME_UA =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 ' +
   '(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
 
@@ -242,5 +242,69 @@ export const localAdapter: CaptureAdapter = {
       if (ctx.signal?.aborted) return fail('local', url, 'cancelled')
       return fail('local', url, err instanceof Error ? err.message : String(err))
     }
+  }
+}
+
+/**
+ * Load a URL in a hidden Chromium window and read back the HTTP status of the
+ * main-frame navigation.
+ *
+ * Used only as a fallback by the link-rot checker in ../health/checkLinks —
+ * a plain HTTP request gets 403 from the same bot-detection this file's own
+ * doc comment describes, and that 403 means "not a browser," not "the page is
+ * gone." Every other status a plain request gets back is already trustworthy,
+ * so nothing else pays for a real window.
+ */
+export async function checkViaChromium(url: string, signal?: AbortSignal): Promise<number | null> {
+  const win = new BrowserWindow({
+    show: false,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
+      javascript: true,
+      images: false,
+      partition: 'persist:capture'
+    }
+  })
+
+  const onAbort = (): void => {
+    if (!win.isDestroyed()) win.destroy()
+  }
+  signal?.addEventListener('abort', onAbort, { once: true })
+
+  try {
+    if (signal?.aborted) return null
+    win.webContents.setUserAgent(CHROME_UA)
+
+    return await new Promise<number | null>((resolve) => {
+      let settled = false
+      const done = (code: number | null): void => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        win.webContents.removeListener('did-navigate', onNavigate)
+        win.webContents.removeListener('did-fail-load', onFail)
+        resolve(code)
+      }
+      const timer = setTimeout(() => done(null), LOAD_TIMEOUT_MS)
+      const onNavigate = (_e: unknown, _navUrl: string, httpResponseCode: number): void =>
+        done(httpResponseCode)
+      const onFail = (
+        _e: unknown,
+        code: number,
+        _desc: string,
+        _navUrl: string,
+        isMainFrame: boolean
+      ): void => {
+        if (isRealLoadFailure(code, isMainFrame)) done(null)
+      }
+      win.webContents.on('did-navigate', onNavigate)
+      win.webContents.on('did-fail-load', onFail)
+      win.loadURL(url).catch(() => done(null))
+    })
+  } finally {
+    signal?.removeEventListener('abort', onAbort)
+    if (!win.isDestroyed()) win.destroy()
   }
 }

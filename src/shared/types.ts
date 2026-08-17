@@ -10,6 +10,21 @@ export type ArchiveTier = 'none' | 'bronze' | 'silver' | 'gold'
 /** The independent places a source can be preserved. */
 export type ServiceId = 'archiveIs' | 'wayback' | 'local' | 'video'
 
+/**
+ * Outcome of the most recent link-rot check against a source's original URL.
+ *
+ * `redirected` means specifically a redirect to a bare homepage — the shape a
+ * removed or reorganised article takes almost every time — not any redirect
+ * at all. A domain move or an https upgrade still lands on `ok`.
+ */
+export type LinkStatus =
+  | 'ok'
+  | 'redirected'
+  | 'notfound'
+  | 'servererror'
+  | 'timeout'
+  | 'unreachable'
+
 export interface SourceLink {
   /** The original URL as it appeared in the document. */
   url: string
@@ -73,6 +88,10 @@ export interface SourceLink {
   excluded: boolean
   /** Why it was excluded, when it was. */
   excludedReason: string
+  /** ISO timestamp of the most recent link-rot check. Empty until checked. */
+  lastCheckedAt: string
+  /** Outcome of the most recent link-rot check. Empty until checked. */
+  linkStatus: LinkStatus | ''
 }
 
 export interface Article {
@@ -149,6 +168,18 @@ export function isStranded(link: SourceLink, drafts: string[]): boolean {
   if (link.foundIn.length === 0) return false
   const ticked = new Set(drafts)
   return !link.foundIn.some((d) => ticked.has(d))
+}
+
+/**
+ * A source whose original URL no longer resolves to what it once did.
+ *
+ * Excluded links are never rotted — DOI and repository links resolve
+ * permanently by design, so a link-rot check has nothing to tell a
+ * journalist about one, the same reasoning that keeps them off the tier
+ * ladder in tierOf below.
+ */
+export function isRotted(link: SourceLink): boolean {
+  return !link.excluded && link.linkStatus !== '' && link.linkStatus !== 'ok'
 }
 
 /** The sources an article still claims as its own. */

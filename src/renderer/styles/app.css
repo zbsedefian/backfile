@@ -990,6 +990,13 @@ body {
   border-color: color-mix(in srgb, var(--danger) 40%, transparent);
 }
 
+/* A source whose original URL no longer resolves — the whole point of the
+   link-rot check is that this cannot hide in a list of otherwise-fine rows. */
+.pill-rotted {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 40%, transparent);
+}
+
 .linklike {
   background: none;
   border: 0;

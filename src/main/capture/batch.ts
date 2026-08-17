@@ -69,6 +69,53 @@ const GAP_MS: Record<ServiceId, number> = {
   video: 0
 }
 
+export type QueueOutcome = 'ok' | 'failed' | 'cancelled'
+
+export interface QueueOptions<T> {
+  items: T[]
+  concurrency: number
+  /** Pause between one worker's items, so a batch is never mistaken for an attack. */
+  gapMs: number
+  isCancelled: () => boolean
+  markCancelled: () => void
+  runOne: (item: T) => Promise<QueueOutcome>
+}
+
+/**
+ * A worker pool: up to `concurrency` workers pull items off a shared queue,
+ * each pausing `gapMs` between its own items. Any single item whose outcome is
+ * 'cancelled' stops every worker, not just the one that hit it — see
+ * BatchRunner's own aborter for why a cancel has to reach work already in
+ * flight, not merely stop the queue from advancing.
+ *
+ * Pulled out of BatchRunner so link-rot checks can run through the same
+ * pacing and cancellation instead of reimplementing it.
+ */
+export async function runQueue<T>({
+  items,
+  concurrency,
+  gapMs,
+  isCancelled,
+  markCancelled,
+  runOne
+}: QueueOptions<T>): Promise<void> {
+  const pending = [...items]
+  const worker = async (): Promise<void> => {
+    while (!isCancelled()) {
+      const next = pending.shift()
+      if (!next) return
+      if ((await runOne(next)) === 'cancelled') {
+        markCancelled()
+        return
+      }
+      if (gapMs && !isCancelled() && pending.length > 0) {
+        await new Promise((r) => setTimeout(r, gapMs))
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, pending.length) }, worker))
+}
+
 export class BatchRunner {
   private cancelled = false
   private session: ArchiveIsSession | null = null
@@ -198,24 +245,16 @@ export class BatchRunner {
       return 'failed'
     }
 
-    const pending = [...queue]
-    const gap = GAP_MS[service]
-    const worker = async (): Promise<void> => {
-      while (!this.cancelled) {
-        const next = pending.shift()
-        if (!next) return
-        if ((await runOne(next.url)) === 'cancelled') {
-          this.cancelled = true
-          return
-        }
-        if (gap && !this.cancelled && pending.length > 0) {
-          await new Promise((r) => setTimeout(r, gap))
-        }
-      }
-    }
-    await Promise.all(
-      Array.from({ length: Math.min(CONCURRENCY[service], pending.length) }, worker)
-    )
+    await runQueue({
+      items: queue,
+      concurrency: CONCURRENCY[service],
+      gapMs: GAP_MS[service],
+      isCancelled: () => this.cancelled,
+      markCancelled: () => {
+        this.cancelled = true
+      },
+      runOne: (link) => runOne(link.url)
+    })
 
     this.session?.close()
     this.session = null

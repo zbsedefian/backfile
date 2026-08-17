@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { ServiceId, SourceLink } from '../../shared/types'
-import { tierOf } from '../../shared/types'
+import { isRotted, tierOf } from '../../shared/types'
 import type { ClickModifiers } from '../../shared/selection'
 import { TierBadge } from './Tier'
 import { ResizeHandle } from './ResizeHandle'
@@ -18,6 +18,15 @@ export interface Sort {
 
 /** Ordering for the tier column: least archived first, so gaps surface. */
 const TIER_RANK: Record<string, number> = { none: 0, bronze: 1, silver: 2, gold: 3 }
+
+/** What each dead-link outcome means, for the "rotted" pill's tooltip. */
+const ROTTED_LABEL: Record<string, string> = {
+  redirected: 'Redirects to the site’s homepage — the page itself is gone',
+  notfound: 'The original URL now returns 404',
+  servererror: 'The original URL now returns an error',
+  timeout: 'The original URL timed out',
+  unreachable: 'The original URL could not be reached'
+}
 
 function hostOf(url: string): string {
   try {
@@ -255,6 +264,11 @@ export function SourceTable({
                       </span>
                     )}
                     {link.excluded && <span className="pill">excluded</span>}
+                    {isRotted(link) && (
+                      <span className="pill pill-rotted" title={ROTTED_LABEL[link.linkStatus as keyof typeof ROTTED_LABEL] ?? 'Link no longer resolves'}>
+                        rotted
+                      </span>
+                    )}
                     <CopyLinkButton url={link.url} />
                   </div>
                   <div className="url-rest" title={link.url}>
