@@ -1006,13 +1006,13 @@ body {
 }
 
 /* A pill that is also the action: click it to open the source in a real
-   browser and clear the flag. Resets the <button> chrome the plain .pill
-   span never had to fight, keeps its border/padding/color as-is. */
+   browser and clear the flag. Only resets the button chrome a <button> has
+   and a plain .pill span never did — background — everything else (size,
+   uppercase, letter-spacing, border) stays exactly what .pill already set;
+   `font: inherit` here would pull the button's own larger ambient size
+   instead and undo it. */
 .pill-button {
   background: none;
-  font: inherit;
-  text-transform: inherit;
-  letter-spacing: inherit;
   cursor: pointer;
 }
 .pill-button:hover {
