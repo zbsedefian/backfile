@@ -1005,6 +1005,20 @@ body {
   border-color: var(--border);
 }
 
+/* A pill that is also the action: click it to open the source in a real
+   browser and clear the flag. Resets the <button> chrome the plain .pill
+   span never had to fight, keeps its border/padding/color as-is. */
+.pill-button {
+  background: none;
+  font: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  cursor: pointer;
+}
+.pill-button:hover {
+  background: color-mix(in srgb, currentColor 14%, transparent);
+}
+
 .linklike {
   background: none;
   border: 0;

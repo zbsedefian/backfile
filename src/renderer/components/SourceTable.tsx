@@ -277,31 +277,31 @@ export function SourceTable({
                     )}
                     {link.excluded && <span className="pill">excluded</span>}
                     {outcome === 'gone' && (
-                      <span className="pill pill-rotted" title="The original URL now returns 404 — the server says this page is gone">
-                        NOT FOUND
-                      </span>
-                    )}
-                    {outcome === 'unverified' && (
-                      <span
-                        className="pill pill-unverified"
-                        title={
-                          UNVERIFIED_LABEL[link.linkStatus] ??
-                          'Could not confirm this page still resolves'
-                        }
-                      >
-                        unverified
-                      </span>
-                    )}
-                    {outcome !== null && (
                       <button
-                        className="linklike small"
-                        title="Looked at it yourself and it's fine? Clear the flag — a bot wall will just fail the same way on the next automated check."
+                        className="pill pill-rotted pill-button"
+                        title="The original URL now returns 404. Click to open it in your browser — if it's actually fine, this clears the flag."
                         onClick={(e) => {
                           e.stopPropagation()
+                          onOpenExternal(link.url)
                           onResolveLinkCheck(link.url)
                         }}
                       >
-                        resolve
+                        NOT FOUND
+                      </button>
+                    )}
+                    {outcome === 'unverified' && (
+                      <button
+                        className="pill pill-unverified pill-button"
+                        title={`${
+                          UNVERIFIED_LABEL[link.linkStatus] ?? 'Could not confirm this page still resolves.'
+                        } Click to open it in your browser — if it's actually fine, this clears the flag.`}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onOpenExternal(link.url)
+                          onResolveLinkCheck(link.url)
+                        }}
+                      >
+                        unverified
                       </button>
                     )}
                     <CopyLinkButton url={link.url} />
