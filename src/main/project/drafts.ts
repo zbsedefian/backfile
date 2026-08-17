@@ -11,6 +11,16 @@
  * filenames per folder, built by explicitly importing one document at a time
  * ("Add article"). A folder starts with none — nothing is adopted just because
  * it happens to be sitting in the same directory.
+ *
+ * That list is kept in Backfile's own settings file, keyed by folder path,
+ * which means it outlives the folder's contents: moving sources.csv aside to
+ * start a piece over leaves the settings entry behind, and the folder reopens
+ * still claiming to have imported documents nobody imported this time round.
+ * Then the next "Add article" — which is additive — analyses that whole
+ * inherited set, and links from a document the journalist never picked land in
+ * the fresh sources.csv. So sources.csv is treated as the evidence that the
+ * imports are real: without it there is no project here yet, whatever settings
+ * remembers about the last one.
  */
 
 export type DraftIndex = Record<string, string[]>
@@ -25,9 +35,20 @@ export interface Resolution {
 export function resolveDrafts(
   articlePath: string,
   documents: string[],
-  index: DraftIndex
+  index: DraftIndex,
+  /** Whether the folder still has the sources.csv those imports produced. */
+  hasSourcesFile: boolean
 ): Resolution {
   const known = index[articlePath] ?? []
+
+  // Every import writes sources.csv, so its absence means the imports this
+  // entry describes belong to a project that is no longer here — renamed,
+  // moved aside, or deleted to start over. Honouring the entry anyway would
+  // re-analyse documents the journalist has not picked since, which is how
+  // links from an unimported draft end up in a brand-new sources.csv.
+  if (!hasSourcesFile) {
+    return { drafts: [], record: known.length > 0 ? [] : null }
+  }
 
   // Chosen files can be renamed or deleted outside Backfile, so the stored list
   // is filtered against what is really on disk rather than trusted outright.

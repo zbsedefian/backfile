@@ -359,13 +359,19 @@ export function App(): JSX.Element {
     setAnalyzing(true)
     setStatus(`Importing ${picked}…`)
     try {
+      // Analysis first, then the record of it. Analysis is what writes
+      // sources.csv, and a stored import is only believed while that file is
+      // there — so recording first leaves a window where a rescan sees an
+      // import with nothing to show for it and clears it away. This order also
+      // means a document that fails to parse is not left sitting in the
+      // switcher as though it had been imported.
+      const result = await window.backfile.analyzeArticle(selected.path, nextDrafts)
       if (!alreadyImported) {
+        await window.backfile.setDrafts(selected.path, selected.documents, nextDrafts)
         setArticles((prev) =>
           prev.map((a) => (a.path === selected.path ? { ...a, drafts: nextDrafts } : a))
         )
-        await window.backfile.setDrafts(selected.path, selected.documents, nextDrafts)
       }
-      const result = await window.backfile.analyzeArticle(selected.path, nextDrafts)
       patchArticle(selected.path, result.links)
       const bits = [`Imported ${picked}`, `${result.links.length} sources`]
       if (result.added) bits.push(`${result.added} new`)

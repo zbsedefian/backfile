@@ -90,7 +90,12 @@ async function resolveArticleDrafts(articles: Article[]): Promise<Article[]> {
     let changed = false
 
     resolved = articles.map((article) => {
-      const { drafts, record } = resolveDrafts(article.path, article.documents, index)
+      const { drafts, record } = resolveDrafts(
+        article.path,
+        article.documents,
+        index,
+        article.hasSourcesFile
+      )
       if (record !== null) {
         index = withResolution(index, article.path, record)
         changed = true
