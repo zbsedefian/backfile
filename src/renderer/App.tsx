@@ -532,6 +532,14 @@ export function App(): JSX.Element {
       if (p.phase === 'checked') {
         setStatus(`${p.done}/${p.total} · checked ${p.url}`)
         if (selectedPath) void refreshSources(selectedPath)
+      } else if (p.phase === 'escalating') {
+        // Its own count, and its own wording: this pass is slower per source
+        // and covers only the few the quick pass could not settle, so reusing
+        // the first pass's numbers made a working run look finished.
+        setStatus(
+          `${p.done}/${p.total} · re-checking in a browser (slower — these need a real page load)`
+        )
+        if (p.status && selectedPath) void refreshSources(selectedPath)
       }
     })
   }, [selectedPath, refreshSources])

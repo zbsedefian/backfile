@@ -38,7 +38,12 @@ export interface CheckProgress {
   done: number
   total: number
   url: string
-  phase: 'checking' | 'checked' | 'finished'
+  /**
+   * 'escalating' is the browser retry pass, which counts over its own much
+   * shorter list rather than the whole run — otherwise it reports the plain
+   * pass's finished total and looks stuck at 76/76 while it is still working.
+   */
+  phase: 'checking' | 'checked' | 'escalating' | 'finished'
   status?: LinkStatus
   /** Set only on the final 'finished' progress event. */
   checked?: number
@@ -267,13 +272,10 @@ export class LinkCheckRunner {
 
     const checkInBrowser = async (link: SourceLink): Promise<QueueOutcome> => {
       if (this.cancelled) return 'cancelled'
-      onProgress({
-        done,
-        total: queue.length,
-        url: link.url,
-        phase: 'checking',
-        detail: 'retrying in a browser'
-      })
+      // Counted against the stubborn list, not the whole run: this pass is
+      // slow enough that a progress line frozen on the plain pass's final
+      // total reads as a hang rather than as work still going on.
+      onProgress({ done: escalated, total: stubborn.length, url: link.url, phase: 'escalating' })
       const status = await recheckViaBrowser(link.url, this.aborter.signal)
       if (this.cancelled) return 'cancelled'
       escalated++
@@ -282,8 +284,14 @@ export class LinkCheckRunner {
       if (status) {
         await recordLinkCheck(articlePath, link.url, status)
         results.set(link.url, status)
-        onProgress({ done, total: queue.length, url: link.url, phase: 'checked', status })
       }
+      onProgress({
+        done: escalated,
+        total: stubborn.length,
+        url: link.url,
+        phase: 'escalating',
+        status: status ?? undefined
+      })
       return 'ok'
     }
 
