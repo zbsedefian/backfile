@@ -21,6 +21,9 @@ interface Props {
   /** Discard a recorded capture and run it again. */
   onRecapture: (url: string, service: ServiceId) => void
   recapturing: string | null
+  /** Build a printable, self-explanatory PDF record of this source's captures. */
+  onGenerateReport: (url: string) => void
+  generatingReport: boolean
 }
 
 export function DetailPane({
@@ -37,7 +40,9 @@ export function DetailPane({
   onEditTitle,
   onDelete,
   onRecapture,
-  recapturing
+  recapturing,
+  onGenerateReport,
+  generatingReport
 }: Props): JSX.Element {
   const [editing, setEditing] = useState(false)
   const [draftUrl, setDraftUrl] = useState('')
@@ -353,6 +358,26 @@ export function DetailPane({
           ) : (
             <span className="muted small">not readable</span>
           )}
+        </div>
+      )}
+
+      {(link.localPath || link.videoPath) && (
+        <div className="detail-block">
+          <div className="detail-label">Evidence</div>
+          <div className="detail-value muted small">
+            A printable record of this source — URL, timestamps, hash, screenshot and capture
+            method — with instructions for verifying it independently.
+          </div>
+          <div className="detail-actions">
+            <button
+              className="chip"
+              disabled={generatingReport}
+              title="Generate a self-contained PDF suitable for attaching to a filing"
+              onClick={() => onGenerateReport(link.url)}
+            >
+              {generatingReport ? 'Generating…' : 'Capture report (PDF)'}
+            </button>
+          </div>
         </div>
       )}
 

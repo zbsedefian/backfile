@@ -11,6 +11,7 @@
  */
 
 import { app, BrowserWindow, Menu, MenuItemConstructorOptions, shell } from 'electron'
+import type { TimestampMode } from './evidence/timestamp'
 
 export type MenuAction =
   | 'open-workspace'
@@ -33,6 +34,12 @@ export type MenuAction =
   | 'video-cookies-firefox'
   | 'video-cookies-edge'
   | 'video-cookies-brave'
+  | 'evidence-refresh-manifest'
+  | 'evidence-verify'
+  | 'evidence-timestamp-off'
+  | 'evidence-timestamp-opentimestamps'
+  | 'evidence-timestamp-rfc3161'
+  | 'evidence-configure-tsa'
   | 'support-email'
 
 const DONATE_URL = 'https://buymeacoffee.com/zacharysedefian'
@@ -60,7 +67,10 @@ function item(
  * was active would be trial and error. Electron menus are static once set, so
  * the caller rebuilds whenever the choice changes.
  */
-export function buildMenu(videoCookiesBrowser: string | null = null): void {
+export function buildMenu(
+  videoCookiesBrowser: string | null = null,
+  timestampMode: TimestampMode = 'off'
+): void {
   const isMac = process.platform === 'darwin'
 
   const cookieChoice = (
@@ -71,6 +81,17 @@ export function buildMenu(videoCookiesBrowser: string | null = null): void {
     label,
     type: 'radio',
     checked: videoCookiesBrowser === value,
+    click: () => send(action)
+  })
+
+  const timestampChoice = (
+    label: string,
+    action: MenuAction,
+    value: TimestampMode
+  ): MenuItemConstructorOptions => ({
+    label,
+    type: 'radio',
+    checked: timestampMode === value,
     click: () => send(action)
   })
 
@@ -154,6 +175,33 @@ export function buildMenu(videoCookiesBrowser: string | null = null): void {
             cookieChoice('Firefox', 'video-cookies-firefox', 'firefox'),
             cookieChoice('Edge', 'video-cookies-edge', 'edge'),
             cookieChoice('Brave', 'video-cookies-brave', 'brave')
+          ]
+        }
+      ]
+    },
+
+    {
+      label: 'Evidence',
+      submenu: [
+        item('Update Manifest', 'evidence-refresh-manifest'),
+        item('Verify Captures', 'evidence-verify'),
+        { type: 'separator' },
+        {
+          // Off by default, like Video Cookies: this is the one other feature
+          // that makes a network request per capture, and turning it on
+          // should be a decision someone made. See evidence/timestamp.ts.
+          label: 'Timestamping',
+          submenu: [
+            timestampChoice('Off', 'evidence-timestamp-off', 'off'),
+            { type: 'separator' },
+            timestampChoice(
+              'OpenTimestamps (free, anchored in Bitcoin)',
+              'evidence-timestamp-opentimestamps',
+              'opentimestamps'
+            ),
+            timestampChoice('RFC 3161 authority…', 'evidence-timestamp-rfc3161', 'rfc3161'),
+            { type: 'separator' },
+            item('Configure RFC 3161 Authority URL…', 'evidence-configure-tsa')
           ]
         }
       ]

@@ -23,6 +23,8 @@ import type { RewritePlan, RewriteResult } from '../main/docx/rewriteLinks'
 import type { AnalyzeResult } from '../main/sources/analyze'
 import type { MenuAction } from '../main/menu'
 import type { NewSource } from '../main/sources/manual'
+import type { RefreshResult, VerificationReport } from '../main/evidence/manifest'
+import type { TimestampSettings } from '../main/evidence/timestamp'
 
 const api = {
   chooseWorkspace: (): Promise<string | null> => ipcRenderer.invoke('workspace:choose'),
@@ -129,6 +131,22 @@ const api = {
   rewriteDocx: (articlePath: string, documentName: string): Promise<RewriteResult> =>
     ipcRenderer.invoke('docx:rewrite', articlePath, documentName),
   supportEmail: (context: string): Promise<void> => ipcRenderer.invoke('support:email', context),
+
+  // ---- evidence: timestamping, the manifest, verification, capture reports ----
+  timestampSettings: (): Promise<TimestampSettings> =>
+    ipcRenderer.invoke('evidence:timestampSettings'),
+  setTimestampSettings: (settings: TimestampSettings): Promise<void> =>
+    ipcRenderer.invoke('evidence:setTimestampSettings', settings),
+  refreshManifest: (articlePath: string): Promise<RefreshResult> =>
+    ipcRenderer.invoke('evidence:refreshManifest', articlePath),
+  verifyCaptures: (articlePath: string): Promise<VerificationReport> =>
+    ipcRenderer.invoke('evidence:verify', articlePath),
+  /** Writes the PDF into the project's own archive/reports/ folder and returns its path. */
+  generateCaptureReport: (
+    articlePath: string,
+    url: string
+  ): Promise<{ ok: true; path: string } | { ok: false; error: string }> =>
+    ipcRenderer.invoke('evidence:generateReport', articlePath, url),
 
   /** Menu items post named actions here rather than acting on their own. */
   onMenuAction: (handler: (action: MenuAction) => void): (() => void) => {

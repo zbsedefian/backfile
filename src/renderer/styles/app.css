@@ -983,6 +983,13 @@ body {
   padding: 1px 5px;
 }
 
+/* A verification result that did not match — a mismatched capture is the one
+   thing this whole feature exists to make impossible to miss. */
+.pill-danger {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 40%, transparent);
+}
+
 .linklike {
   background: none;
   border: 0;

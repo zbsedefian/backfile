@@ -23,8 +23,13 @@ import { FailuresPanel } from './components/FailuresPanel'
 import { CaptureMenu } from './components/CaptureMenu'
 import { ArticleSourceMenu } from './components/ArticleSourceMenu'
 import { ResizeHandle } from './components/ResizeHandle'
+import { EvidenceDialog } from './components/EvidenceDialog'
+import { VerifyPanel } from './components/VerifyPanel'
 import { tierCounts } from './components/Tier'
 import { clamp, usePersistentState } from './usePersistentState'
+import type { VerificationReport } from '../main/evidence/manifest'
+import type { TimestampMode } from '../main/evidence/timestamp'
+import { DEFAULT_TSA_URL } from '../shared/evidence'
 
 /**
  * What the source list is narrowed to.
@@ -241,6 +246,15 @@ export function App(): JSX.Element {
   useEffect(() => {
     failuresRef.current = failures
   }, [failures])
+
+  // ---- evidence: timestamping settings, manifest verification, capture reports ----
+  const [evidenceDialogOpen, setEvidenceDialogOpen] = useState(false)
+  const [tsaUrl, setTsaUrl] = useState(DEFAULT_TSA_URL)
+  const [savingTsaUrl, setSavingTsaUrl] = useState(false)
+  const [verifyOpen, setVerifyOpen] = useState(false)
+  const [verifying, setVerifying] = useState(false)
+  const [verifyReport, setVerifyReport] = useState<VerificationReport | null>(null)
+  const [generatingReport, setGeneratingReport] = useState(false)
 
   /**
    * Add a failure to the running record.
@@ -983,6 +997,96 @@ export function App(): JSX.Element {
   }, [])
 
   /**
+   * Which timestamping scheme, if any, a local or video capture's SHA-256 is
+   * submitted to — set from the Evidence menu. Off by default; see
+   * evidence/timestamp.ts for why that default is deliberate.
+   */
+  const setTimestampMode = useCallback(async (mode: TimestampMode) => {
+    const current = await window.backfile.timestampSettings()
+    await window.backfile.setTimestampSettings({ mode, tsaUrl: current.tsaUrl })
+    setStatus(
+      mode === 'off'
+        ? 'Timestamping is off — captures are no longer submitted anywhere.'
+        : mode === 'opentimestamps'
+          ? 'Captures will be timestamped with OpenTimestamps (free, anchored in Bitcoin).'
+          : `Captures will be timestamped via ${current.tsaUrl || DEFAULT_TSA_URL}.`
+    )
+  }, [])
+
+  const openEvidenceDialog = useCallback(async () => {
+    const current = await window.backfile.timestampSettings()
+    setTsaUrl(current.tsaUrl || DEFAULT_TSA_URL)
+    setEvidenceDialogOpen(true)
+  }, [])
+
+  const saveTsaUrl = useCallback(async (url: string) => {
+    setSavingTsaUrl(true)
+    try {
+      await window.backfile.setTimestampSettings({ mode: 'rfc3161', tsaUrl: url })
+      setStatus(`Timestamping via ${url}.`)
+      setEvidenceDialogOpen(false)
+    } finally {
+      setSavingTsaUrl(false)
+    }
+  }, [])
+
+  /**
+   * Bring the manifest up to date with whatever is on disk. Never overwrites a
+   * recorded hash — see evidence/manifest.ts — so this is always safe to run.
+   */
+  const refreshManifest = useCallback(async () => {
+    if (!selected) return
+    setStatus('Updating manifest…')
+    try {
+      const result = await window.backfile.refreshManifest(selected.path)
+      setStatus(
+        result.added > 0
+          ? `Manifest updated — ${result.added} capture${result.added === 1 ? '' : 's'} added.`
+          : 'Manifest already matches the captures on disk.'
+      )
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      setStatus(`Could not update the manifest: ${message}`)
+    }
+  }, [selected])
+
+  const runVerify = useCallback(async () => {
+    if (!selected) return
+    setVerifyOpen(true)
+    setVerifying(true)
+    try {
+      const report = await window.backfile.verifyCaptures(selected.path)
+      setVerifyReport(report)
+    } catch (err) {
+      setVerifyOpen(false)
+      recordFailure('analyze', err instanceof Error ? err.message : String(err))
+    } finally {
+      setVerifying(false)
+    }
+  }, [selected, recordFailure])
+
+  /** A printable, self-explanatory record of one source, for attaching to a filing. */
+  const generateReport = useCallback(
+    async (url: string) => {
+      if (!selected) return
+      setGeneratingReport(true)
+      setStatus('Generating capture report…')
+      try {
+        const result = await window.backfile.generateCaptureReport(selected.path, url)
+        if (result.ok) {
+          setStatus(`Report saved — ${result.path}`)
+          void window.backfile.revealCapture(selected.path, result.path)
+        } else {
+          setStatus(`Could not generate the report: ${result.error}`)
+        }
+      } finally {
+        setGeneratingReport(false)
+      }
+    },
+    [selected]
+  )
+
+  /**
    * Fetches yt-dlp's own binary, for a journalist who has never opened a
    * terminal. "brew install yt-dlp" is a dead end for that audience — this
    * only asks them to click a button they can already see.
@@ -1031,6 +1135,8 @@ export function App(): JSX.Element {
 
       if (e.key === 'Escape') {
         if (failuresOpen) return setFailuresOpen(false)
+        if (verifyOpen) return setVerifyOpen(false)
+        if (evidenceDialogOpen) return setEvidenceDialogOpen(false)
         if (addingSource) return setAddingSource(false)
         if (exportOpen) return closeExport()
         if (typing) return (target as HTMLElement).blur()
@@ -1052,7 +1158,8 @@ export function App(): JSX.Element {
       // With any modal up, the table underneath is not what the keyboard is
       // aimed at — a, d and x firing captures on hidden rows is how a review
       // of three failures quietly launches a fourth capture.
-      if (typing || exportOpen || addingSource || failuresOpen) return
+      if (typing || exportOpen || addingSource || failuresOpen || verifyOpen || evidenceDialogOpen)
+        return
 
       if ((e.metaKey || e.ctrlKey) && e.key === 'a') {
         if (visible.length === 0) return
@@ -1153,6 +1260,18 @@ export function App(): JSX.Element {
           return void setVideoCookiesBrowser('edge')
         case 'video-cookies-brave':
           return void setVideoCookiesBrowser('brave')
+        case 'evidence-refresh-manifest':
+          return void refreshManifest()
+        case 'evidence-verify':
+          return void runVerify()
+        case 'evidence-timestamp-off':
+          return void setTimestampMode('off')
+        case 'evidence-timestamp-opentimestamps':
+          return void setTimestampMode('opentimestamps')
+        case 'evidence-timestamp-rfc3161':
+          return void setTimestampMode('rfc3161')
+        case 'evidence-configure-tsa':
+          return void openEvidenceDialog()
         case 'support-email':
           return void window.backfile.supportEmail(
             selected ? `article "${selected.name}"` : ''
@@ -1670,6 +1789,8 @@ export function App(): JSX.Element {
             onDelete={deleteSource}
             onRecapture={recapture}
             recapturing={recapturing}
+            onGenerateReport={generateReport}
+            generatingReport={generatingReport}
           />
         ) : (
           <div />
@@ -1759,6 +1880,24 @@ export function App(): JSX.Element {
             setFailures([])
             setFailuresOpen(false)
           }}
+        />
+      )}
+
+      {evidenceDialogOpen && (
+        <EvidenceDialog
+          currentUrl={tsaUrl}
+          saving={savingTsaUrl}
+          onSave={saveTsaUrl}
+          onCancel={() => setEvidenceDialogOpen(false)}
+        />
+      )}
+
+      {verifyOpen && (
+        <VerifyPanel
+          report={verifyReport}
+          checking={verifying}
+          onClose={() => setVerifyOpen(false)}
+          onRecheck={runVerify}
         />
       )}
     </div>

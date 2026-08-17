@@ -16,6 +16,9 @@ import { ServiceId, SourceLink } from '../../shared/types'
 import { ArchiveIsSession } from './archiveIs'
 import { adapterFor } from './index'
 import { recordCapture } from '../sources/analyze'
+import { attestCapture } from '../evidence'
+import { kindForService } from '../evidence/manifest'
+import { DEFAULT_TIMESTAMP_SETTINGS, TimestampSettings } from '../evidence/timestamp'
 
 export interface BatchProgress {
   /** Which run this belongs to; several services may run at once. */
@@ -100,7 +103,9 @@ export class BatchRunner {
     links: SourceLink[],
     service: ServiceId,
     cookiesBrowser: string | null,
-    onProgress: (p: BatchProgress) => void
+    onProgress: (p: BatchProgress) => void,
+    timestamping: TimestampSettings = DEFAULT_TIMESTAMP_SETTINGS,
+    tool = 'Backfile'
   ): Promise<BatchProgress> {
     const queue = BatchRunner.pending(links, service)
     let succeeded = 0
@@ -150,6 +155,22 @@ export class BatchRunner {
           result.title,
           result.screenshotPath
         )
+        // Evidence is best-effort and never fails a capture that already
+        // succeeded — see attestCapture's own doc comment for why.
+        const kind = kindForService(service)
+        if (kind) {
+          await attestCapture({
+            projectPath: articlePath,
+            url,
+            title: result.title,
+            relativePath: result.value,
+            kind,
+            screenshotPath: result.screenshotPath,
+            tool,
+            timestamping,
+            signal: this.aborter.signal
+          }).catch(() => undefined)
+        }
         succeeded++
         onProgress({
           service,

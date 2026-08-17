@@ -28,6 +28,17 @@ import { BatchRunner } from './capture/batch'
 import { browserPane, Bounds } from './browser/BrowserPane'
 import { buildMenu } from './menu'
 import { planDocxRewrite, rewriteDocxLinks } from './docx/rewriteLinks'
+import {
+  attestCapture,
+  DEFAULT_TIMESTAMP_SETTINGS,
+  generateCaptureReport,
+  kindForService,
+  refreshManifest,
+  TimestampSettings,
+  verifyManifest,
+  type VerificationReport
+} from './evidence'
+import type { GenerateReportResult } from './evidence/generateReport'
 
 const SETTINGS_FILE = (): string => path.join(app.getPath('userData'), 'settings.json')
 
@@ -56,6 +67,13 @@ interface Settings {
    * machine is allowed to do, not about any one source.
    */
   videoCookiesBrowser?: string | null
+  /**
+   * Evidence-grade timestamping: submit each local/video capture's SHA-256 to
+   * an independent authority and store the returned token beside it in
+   * archive/, so a filing can show the capture existed, unchanged, before the
+   * date on the token. Off by default — see evidence/timestamp.ts for why.
+   */
+  timestamping?: TimestampSettings
 }
 
 /**
@@ -169,6 +187,11 @@ const FIELD_FOR: Record<ServiceId, 'archiveIs' | 'wayback' | 'localPath' | 'vide
   wayback: 'wayback',
   local: 'localPath',
   video: 'videoPath'
+}
+
+/** Recorded against every manifest entry, so a report says what made it. */
+function currentTool(): string {
+  return `Backfile ${app.getVersion()}`
 }
 
 function registerIpc(): void {
@@ -366,7 +389,7 @@ function registerIpc(): void {
 
   ipcMain.handle('capture:run', async (_e, req: CaptureRequest): Promise<CaptureResult> => {
     const adapter = adapterFor(req.service)
-    const { videoCookiesBrowser } = await readSettings()
+    const { videoCookiesBrowser, timestamping } = await readSettings()
     const result = await adapter.capture(req.url, {
       articlePath: req.articlePath,
       cookiesBrowser: videoCookiesBrowser
@@ -380,6 +403,22 @@ function registerIpc(): void {
         result.title,
         result.screenshotPath
       )
+      // Best-effort: see attestCapture's own doc comment for why a slow or
+      // unreachable timestamp authority must never fail a capture that
+      // already succeeded and is already saved to disk.
+      const kind = kindForService(req.service)
+      if (kind) {
+        await attestCapture({
+          projectPath: req.articlePath,
+          url: req.url,
+          title: result.title,
+          relativePath: result.value,
+          kind,
+          screenshotPath: result.screenshotPath,
+          tool: currentTool(),
+          timestamping: timestamping ?? DEFAULT_TIMESTAMP_SETTINGS
+        }).catch(() => undefined)
+      }
     }
     return result
   })
@@ -417,10 +456,18 @@ function registerIpc(): void {
         // document the journalist has just unticked.
         const wanted = urls ? new Set(urls) : null
         const links = wanted ? all.filter((l) => wanted.has(l.url)) : all
-        const { videoCookiesBrowser } = await readSettings()
-        await runner.run(articlePath, links, service, videoCookiesBrowser ?? null, (progress) => {
-          if (!event.sender.isDestroyed()) event.sender.send('capture:progress', progress)
-        })
+        const { videoCookiesBrowser, timestamping } = await readSettings()
+        await runner.run(
+          articlePath,
+          links,
+          service,
+          videoCookiesBrowser ?? null,
+          (progress) => {
+            if (!event.sender.isDestroyed()) event.sender.send('capture:progress', progress)
+          },
+          timestamping ?? DEFAULT_TIMESTAMP_SETTINGS,
+          currentTool()
+        )
       } finally {
         activeBatches.delete(service)
       }
@@ -536,7 +583,8 @@ function registerIpc(): void {
       await updateSettings((settings) => ({ ...settings, videoCookiesBrowser: browser }))
       // The Video Cookies submenu shows the active choice as a radio dot, and
       // Electron menus are static once set — rebuilding is how the dot moves.
-      buildMenu(browser)
+      const { timestamping } = await readSettings()
+      buildMenu(browser, (timestamping ?? DEFAULT_TIMESTAMP_SETTINGS).mode)
     }
   )
 
@@ -584,6 +632,66 @@ function registerIpc(): void {
     }
   )
 
+  // ---- evidence: timestamping, the manifest, verification, capture reports ----
+
+  ipcMain.handle('evidence:timestampSettings', async (): Promise<TimestampSettings> => {
+    const { timestamping } = await readSettings()
+    return timestamping ?? DEFAULT_TIMESTAMP_SETTINGS
+  })
+
+  ipcMain.handle(
+    'evidence:setTimestampSettings',
+    async (_e, settings: TimestampSettings): Promise<void> => {
+      await updateSettings((s) => ({ ...s, timestamping: settings }))
+      // The Timestamping submenu shows the active mode as a radio dot; see
+      // the Video Cookies submenu for why the menu has to be rebuilt for it
+      // to move.
+      const { videoCookiesBrowser } = await readSettings()
+      buildMenu(videoCookiesBrowser ?? null, settings.mode)
+    }
+  )
+
+  /**
+   * Bring the manifest up to date with whatever is on disk: an entry for every
+   * capture that has none. Run by hand (Evidence menu) as well as automatically
+   * whenever it is convenient, since it never overwrites a recorded hash — see
+   * evidence/manifest.ts for the rule that makes that safe.
+   */
+  ipcMain.handle(
+    'evidence:refreshManifest',
+    async (_e, articlePath: string) => {
+      const links = await readSources(articlePath)
+      return refreshManifest(articlePath, links, currentTool())
+    }
+  )
+
+  ipcMain.handle(
+    'evidence:verify',
+    async (_e, articlePath: string): Promise<VerificationReport> => {
+      return verifyManifest(articlePath)
+    }
+  )
+
+  ipcMain.handle(
+    'evidence:generateReport',
+    async (
+      _e,
+      articlePath: string,
+      url: string
+    ): Promise<{ ok: true; path: string } | { ok: false; error: string }> => {
+      try {
+        const result: GenerateReportResult = await generateCaptureReport(
+          articlePath,
+          url,
+          currentTool()
+        )
+        return { ok: true, path: result.relativePath }
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) }
+      }
+    }
+  )
+
   /**
    * Open a pre-filled support email in the user's mail client.
    *
@@ -612,10 +720,10 @@ function registerIpc(): void {
 
 app.whenReady().then(async () => {
   registerIpc()
-  // The menu shows the stored Video Cookies choice, so it needs the settings
-  // before it is built the first time.
-  const { videoCookiesBrowser } = await readSettings()
-  buildMenu(videoCookiesBrowser ?? null)
+  // The menu shows the stored Video Cookies and Timestamping choices, so it
+  // needs the settings before it is built the first time.
+  const { videoCookiesBrowser, timestamping } = await readSettings()
+  buildMenu(videoCookiesBrowser ?? null, (timestamping ?? DEFAULT_TIMESTAMP_SETTINGS).mode)
   createWindow()
 
   app.on('activate', () => {
