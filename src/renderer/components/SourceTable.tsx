@@ -279,10 +279,10 @@ export function SourceTable({
                     {outcome === 'gone' && (
                       <button
                         className="pill pill-rotted pill-button"
-                        title="The original URL now returns 404. Click to open it in your browser — if it's actually fine, this clears the flag."
+                        title="The original URL now returns 404. Click to open it here — if it's actually fine, this clears the flag."
                         onClick={(e) => {
                           e.stopPropagation()
-                          onOpenExternal(link.url)
+                          onOpen(link.url)
                           onResolveLinkCheck(link.url)
                         }}
                       >
@@ -294,10 +294,10 @@ export function SourceTable({
                         className="pill pill-unverified pill-button"
                         title={`${
                           UNVERIFIED_LABEL[link.linkStatus] ?? 'Could not confirm this page still resolves.'
-                        } Click to open it in your browser — if it's actually fine, this clears the flag.`}
+                        } Click to open it here — if it's actually fine, this clears the flag.`}
                         onClick={(e) => {
                           e.stopPropagation()
-                          onOpenExternal(link.url)
+                          onOpen(link.url)
                           onResolveLinkCheck(link.url)
                         }}
                       >

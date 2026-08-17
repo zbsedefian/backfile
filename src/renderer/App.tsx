@@ -39,7 +39,7 @@ import { DEFAULT_TSA_URL } from '../shared/evidence'
  * filter and the tier counts shown next to it are the same control — see the
  * note above the filter bar in the JSX below for why that used to be two.
  */
-type Filter = 'all' | ArchiveTier | 'excluded' | 'orphaned' | 'flagged'
+type Filter = 'all' | ArchiveTier | 'excluded' | 'orphaned' | 'notfound' | 'unverified'
 
 const SERVICE_LABEL: Record<ServiceId, string> = {
   archiveIs: 'archive.is',
@@ -842,7 +842,8 @@ export function App(): JSX.Element {
       if (filter === 'orphaned') return l.foundIn.length === 0 || stranded.has(l.url)
       // Same reasoning as orphaned: a flagged link is kept findable for
       // cleanup even if the document citing it has since been unticked.
-      if (filter === 'flagged') return linkOutcome(l) !== null
+      if (filter === 'notfound') return linkOutcome(l) === 'gone'
+      if (filter === 'unverified') return linkOutcome(l) === 'unverified'
       if (stranded.has(l.url)) return false
       if (filter === 'all') return true
       // Same precedence as tierCounts below: excluded is checked before tier,
@@ -1014,8 +1015,12 @@ export function App(): JSX.Element {
     [selected, articleSources]
   )
 
-  const flaggedCount = useMemo(
-    () => (selected ? articleSources.filter((l) => linkOutcome(l) !== null).length : 0),
+  const notFoundCount = useMemo(
+    () => (selected ? articleSources.filter((l) => linkOutcome(l) === 'gone').length : 0),
+    [selected, articleSources]
+  )
+  const unverifiedCount = useMemo(
+    () => (selected ? articleSources.filter((l) => linkOutcome(l) === 'unverified').length : 0),
     [selected, articleSources]
   )
 
@@ -1574,13 +1579,22 @@ export function App(): JSX.Element {
                       >
                         Orphaned
                       </button>
-                      {FEATURES.linkHealth && flaggedCount > 0 && (
+                      {FEATURES.linkHealth && notFoundCount > 0 && (
                         <button
-                          className={`tab${filter === 'flagged' ? ' is-active' : ''}`}
-                          onClick={() => setFilter('flagged')}
-                          title="The last link check found something worth a look: a confirmed 404, or an outcome it could not verify as clean"
+                          className={`tab${filter === 'notfound' ? ' is-active' : ''}`}
+                          onClick={() => setFilter('notfound')}
+                          title="The original URL now returns 404 — the server itself says the page is gone"
                         >
-                          Flagged ({flaggedCount})
+                          Not found ({notFoundCount})
+                        </button>
+                      )}
+                      {FEATURES.linkHealth && unverifiedCount > 0 && (
+                        <button
+                          className={`tab${filter === 'unverified' ? ' is-active' : ''}`}
+                          onClick={() => setFilter('unverified')}
+                          title="The last link check could not confirm this page resolves — could be real link rot, could just be a bot-detection wall"
+                        >
+                          Unverified ({unverifiedCount})
                         </button>
                       )}
                     </div>
