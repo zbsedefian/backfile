@@ -55,10 +55,23 @@ test('a capture of a bot check yields no title rather than a useless one', () =>
     '<title>Attention Required! | Cloudflare</title>',
     '<title>Access Denied</title>',
     '<title>403 Forbidden</title>',
-    '<title>Verify you are human</title>'
+    '<title>Verify you are human</title>',
+    // Led by a status code, which an anchored match used to sail past.
+    '<title>404 Not Found</title>',
+    '<title>404 - Page Not Found</title>',
+    '<title>500 Internal Server Error</title>'
   ]) {
     assert.equal(extractTitleFromMhtml(junk), '', junk)
   }
+})
+
+test('a real headline that merely starts with a number is kept', () => {
+  // The status-code strip must not swallow these.
+  assert.equal(
+    extractTitleFromMhtml('<title>911 calls reveal a slow response</title>'),
+    '911 calls reveal a slow response'
+  )
+  assert.equal(extractTitleFromMhtml('<title>500 Days of Summer</title>'), '500 Days of Summer')
 })
 
 test('an empty or absent title yields nothing', () => {

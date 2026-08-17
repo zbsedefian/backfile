@@ -24,6 +24,13 @@ export type LinkStatus =
   | 'servererror'
   | 'timeout'
   | 'unreachable'
+  /**
+   * Something loaded, but it was not the article — a bot wall or an error
+   * page. Distinct from the outcomes above because those describe what the
+   * server said, while this one describes a page Backfile actually rendered
+   * and then failed to recognise as the source.
+   */
+  | 'blocked'
 
 export interface SourceLink {
   /** The original URL as it appeared in the document. */

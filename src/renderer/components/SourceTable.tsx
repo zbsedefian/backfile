@@ -30,6 +30,7 @@ const TIER_RANK: Record<string, number> = { none: 0, bronze: 1, silver: 2, gold:
  * shown with any certainty.
  */
 const UNVERIFIED_LABEL: Record<string, string> = {
+  blocked: 'A page was captured, but it was a bot check or an error page rather than the article — the saved copy is probably not worth keeping.',
   redirected: 'Redirects to the site’s homepage — may be gone, may be a bot check. Worth a manual look.',
   servererror: 'Returned an error when checked automatically — could be down, or could be blocking the check.',
   timeout: 'Timed out when checked automatically — could be down, slow, or blocking the check.',

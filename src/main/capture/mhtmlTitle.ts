@@ -73,10 +73,23 @@ function decodeQuotedPrintable(text: string): string {
  * and two copies of this list would drift apart.
  */
 const PLACEHOLDER_TITLE =
-  /^(just a moment|attention required|access denied|are you a robot|error|not found|403 forbidden|redirecting|loading|one moment|please wait|security check|verify you are human)\b/i
+  /^(just a moment|attention required|access denied|are you a robot|error|not found|page not found|page unavailable|forbidden|unavailable|internal server error|server error|bad gateway|service unavailable|redirecting|loading|one moment|please wait|security check|verify you are human)\b/i
+
+/**
+ * Error pages routinely lead with the status code — "404 Not Found", "500 -
+ * Internal Server Error" — which an anchored match would sail straight past,
+ * as it did for every 404 while catching "403 Forbidden" only because that
+ * exact string was once spelled out in the list above.
+ *
+ * Stripping the code first covers all of them uniformly, and cannot swallow a
+ * real headline: dropping the leading number from "911 calls reveal…" leaves
+ * text that still matches nothing on the list and is kept.
+ */
+const LEADING_STATUS_CODE = /^\d{3}\s*[-–—:|]?\s*/
 
 export function isPlaceholderTitle(title: string): boolean {
-  return PLACEHOLDER_TITLE.test(title.replace(/\s+/g, ' ').trim())
+  const clean = title.replace(/\s+/g, ' ').trim()
+  return PLACEHOLDER_TITLE.test(clean) || PLACEHOLDER_TITLE.test(clean.replace(LEADING_STATUS_CODE, ''))
 }
 
 /**

@@ -41,7 +41,8 @@ const LINK_STATUSES: ReadonlySet<string> = new Set<LinkStatus>([
   'notfound',
   'servererror',
   'timeout',
-  'unreachable'
+  'unreachable',
+  'blocked'
 ])
 
 const TIER_LABEL: Record<string, string> = {

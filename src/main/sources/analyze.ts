@@ -164,14 +164,7 @@ export async function recordCapture(
     if (clean) link.title = clean
     if (screenshotPath) link.screenshotPath = screenshotPath
     link.capturedAt = new Date().toISOString().slice(0, 19).replace('T', ' ')
-    // A capture succeeding — local, archive.is, Wayback or video — is itself
-    // proof the source resolves right now, and stronger proof than the
-    // link-rot checker's plain request: it means a real load actually got the
-    // page. Clears any earlier "gone"/"unverified" flag rather than leaving
-    // it stale until the next automated check, which for a source behind
-    // bot-detection may never come back clean on its own.
-    link.linkStatus = 'ok'
-    link.lastCheckedAt = link.capturedAt
+    recordCaptureEvidence(link, field, title)
     await writeSources(articlePath, links)
     return links
   })
@@ -180,6 +173,48 @@ export async function recordCapture(
 /** Reject the placeholder titles a bot-check or error page hands back. */
 function tidyTitle(title: string): string {
   return extractTitleFromMhtml(`<title>${title}</title>`)
+}
+
+/**
+ * What a finished capture proves about the source still being there.
+ *
+ * Deliberately narrow, because a capture succeeding is not the same as the
+ * source being fine: Chromium saves a "Verifying you are human" interstitial
+ * to MHTML exactly as happily as it saves an article, and treating that as
+ * proof would clear a link-rot flag on the strength of a junk file — the
+ * precise false negative the flag exists to raise.
+ *
+ * So only a capture Backfile performed itself, and recognised, counts:
+ *
+ * - A video download is unambiguous. yt-dlp pulled real media off the page;
+ *   nothing else produces that.
+ * - A local capture counts only when the page handed back a real headline.
+ *   A rejected title means what got saved was a wall or an error page, which
+ *   is worth flagging rather than ignoring — it is a capture the journalist
+ *   will otherwise trust later without opening.
+ * - archive.is and Wayback prove nothing here either way. A third party
+ *   fetched the page and Backfile never saw what came back, and both will
+ *   snapshot an error page without complaint. Those leave whatever the last
+ *   real check recorded alone rather than overwriting it with a guess.
+ */
+function recordCaptureEvidence(
+  link: SourceLink,
+  field: 'archiveIs' | 'wayback' | 'localPath' | 'videoPath',
+  title: string | undefined
+): void {
+  const stamp = (status: SourceLink['linkStatus']): void => {
+    link.linkStatus = status
+    link.lastCheckedAt = link.capturedAt
+  }
+
+  if (field === 'videoPath') return stamp('ok')
+  if (field !== 'localPath') return
+
+  // No title reported at all is no evidence either way — say nothing rather
+  // than reading silence as a failure.
+  const reported = (title ?? '').trim()
+  if (!reported) return
+  stamp(tidyTitle(reported) ? 'ok' : 'blocked')
 }
 
 /**
